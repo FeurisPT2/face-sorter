@@ -76,7 +76,7 @@ def run_background_scan(source_path: Path):
         person_names = {}
         
         # 2. Get list of files
-        valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+        valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".arw"}
         image_files = []
         
         # Walk source directory

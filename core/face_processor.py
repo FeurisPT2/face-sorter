@@ -77,12 +77,19 @@ class FaceProcessor:
             self.load_models()
             
         img_path = Path(img_path)
-        # Read image with OpenCV
-        # Use cv2.IMREAD_COLOR and handle unicode paths if needed
-        # Since cv2.imread might fail for non-ascii paths on some systems, use numpy
+        # Read image with OpenCV, or rawpy for Sony RAW .ARW files
+        img = None
         try:
-            img_data = np.fromfile(str(img_path), np.uint8)
-            img = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
+            if img_path.suffix.lower() == ".arw":
+                import rawpy
+                with rawpy.imread(str(img_path)) as raw:
+                    # Postprocess RAW to RGB numpy array
+                    rgb = raw.postprocess()
+                    # Convert RGB to BGR for OpenCV
+                    img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            else:
+                img_data = np.fromfile(str(img_path), np.uint8)
+                img = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
         except Exception as e:
             print(f"Error reading image {img_path}: {e}")
             return []
