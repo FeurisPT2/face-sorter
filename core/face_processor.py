@@ -1,9 +1,38 @@
 import os
+import gc
 import urllib.request
 import cv2
 import numpy as np
 from pathlib import Path
 import uuid
+
+# --- Module-level worker support for ProcessPoolExecutor ---
+# Each worker process keeps its own FaceProcessor instance in this global variable.
+# This avoids re-loading YuNet + SFace models for every single image.
+_worker_processor = None
+
+def _init_worker(models_dir_str):
+    """Called once when a worker process starts. Loads models into process-local global."""
+    global _worker_processor
+    _worker_processor = FaceProcessor(models_dir=models_dir_str)
+    _worker_processor.load_models()
+
+def _process_single_image(args):
+    """
+    Top-level function callable by ProcessPoolExecutor.
+    Receives (img_path_str, cache_dir_str) and returns list of face dicts.
+    Uses the process-local _worker_processor initialized by _init_worker.
+    """
+    global _worker_processor
+    img_path_str, cache_dir_str = args
+    try:
+        results = _worker_processor.scan_image(img_path_str, cache_dir_str)
+        # Explicit GC after processing to free large RAW buffers in worker memory
+        gc.collect()
+        return results
+    except Exception as e:
+        print(f"Worker error processing {img_path_str}: {e}")
+        return []
 
 class FaceProcessor:
     YUNET_URL = "https://huggingface.co/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx"

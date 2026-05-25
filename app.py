@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
@@ -11,7 +12,7 @@ from pydantic import BaseModel
 # Add current directory to path to import core modules
 sys.path.append(str(Path(__file__).parent))
 
-from core.face_processor import FaceProcessor
+from core.face_processor import FaceProcessor, _init_worker, _process_single_image
 from core.clusterer import FaceClusterer
 from core.exporter import FaceExporter
 
@@ -23,6 +24,7 @@ CACHE_DIR = BASE_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR = BASE_DIR / "models"
 
 # Mount cache for cropped images
 app.mount("/static/cache", StaticFiles(directory=str(CACHE_DIR)), name="cache")
@@ -44,6 +46,7 @@ custom_assignments = {} # Map of face_id -> target_cluster_id (for manual overri
 
 class ScanRequest(BaseModel):
     source_dir: str
+    workers: int = 4
 
 class RenameRequest(BaseModel):
     cluster_id: str
@@ -60,7 +63,10 @@ class ExportRequest(BaseModel):
     group_threshold: Optional[int] = 5
     exclude_groups_from_individuals: Optional[bool] = False
 
-def run_background_scan(source_path: Path):
+# Thread lock for safe scan_state updates from background thread
+_scan_lock = threading.Lock()
+
+def run_background_scan(source_path: Path, num_workers: int = 4):
     global scan_state, scan_results, clustered_groups, person_names, custom_assignments
     try:
         # 1. Reset states
@@ -98,27 +104,72 @@ def run_background_scan(source_path: Path):
         
         if total == 0:
             scan_state["status"] = "error"
-            scan_state["error_message"] = "Không tìm thấy bất kỳ tệp ảnh nào (.jpg, .jpeg, .png, .webp, .bmp) trong thư mục này."
+            scan_state["error_message"] = "Không tìm thấy bất kỳ tệp ảnh nào (.jpg, .jpeg, .png, .webp, .bmp, .arw) trong thư mục này."
             return
-            
-        # Ensure models are loaded
-        scan_state["current_file"] = "Đang kiểm tra và tải các mô hình học máy (YuNet & SFace)..."
-        processor.load_models()
         
-        # 3. Process each image
+        # Ensure models are downloaded before spawning workers
+        scan_state["current_file"] = "Đang kiểm tra và tải các mô hình học máy (YuNet & SFace)..."
+        processor.ensure_models()
+        
+        # Clamp workers to valid range
+        max_workers = min(max(1, num_workers), os.cpu_count() or 4)
+        
+        # 3. Process images in parallel using ProcessPoolExecutor
+        cache_dir_str = str(CACHE_DIR)
+        models_dir_str = str(MODELS_DIR)
+        
+        # Build task arguments
+        task_args = [(str(img_file), cache_dir_str) for img_file in image_files]
+        
         faces_accumulator = []
-        for idx, img_file in enumerate(image_files):
-            scan_state["current_file"] = img_file.name
-            scan_state["processed_files"] = idx + 1
-            
-            try:
-                faces = processor.scan_image(img_file, CACHE_DIR)
-                if faces:
-                    faces_accumulator.extend(faces)
-                    scan_state["faces_found"] += len(faces)
-            except Exception as e:
-                print(f"Lỗi khi xử lý ảnh {img_file.name}: {e}")
+        processed_count = 0
+        
+        scan_state["current_file"] = f"Khởi tạo {max_workers} luồng xử lý song song..."
+        
+        if max_workers == 1:
+            # Sequential mode — use the main processor directly (no subprocess overhead)
+            processor.load_models()
+            for idx, img_file in enumerate(image_files):
+                scan_state["current_file"] = img_file.name
+                scan_state["processed_files"] = idx + 1
+                try:
+                    faces = processor.scan_image(img_file, CACHE_DIR)
+                    if faces:
+                        faces_accumulator.extend(faces)
+                        scan_state["faces_found"] += len(faces)
+                except Exception as e:
+                    print(f"Lỗi khi xử lý ảnh {img_file.name}: {e}")
+        else:
+            # Parallel mode — each worker process loads its own models via _init_worker
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                initializer=_init_worker,
+                initargs=(models_dir_str,)
+            ) as executor:
+                # Submit all tasks and map futures back to filenames
+                future_to_filename = {}
+                for args in task_args:
+                    future = executor.submit(_process_single_image, args)
+                    future_to_filename[future] = Path(args[0]).name
                 
+                # Collect results as they complete (real-time progress)
+                for future in as_completed(future_to_filename):
+                    processed_count += 1
+                    filename = future_to_filename[future]
+                    
+                    with _scan_lock:
+                        scan_state["current_file"] = filename
+                        scan_state["processed_files"] = processed_count
+                    
+                    try:
+                        faces = future.result()
+                        if faces:
+                            faces_accumulator.extend(faces)
+                            with _scan_lock:
+                                scan_state["faces_found"] += len(faces)
+                    except Exception as e:
+                        print(f"Lỗi khi xử lý ảnh {filename}: {e}")
+        
         scan_results = faces_accumulator
         scan_state["status"] = "done"
         
@@ -199,8 +250,8 @@ def scan_directory(request: ScanRequest, background_tasks: BackgroundTasks):
         return {"status": "scanning", "message": "Quá trình quét đang diễn ra, vui lòng chờ."}
         
     # Start scanning in background
-    background_tasks.add_task(run_background_scan, source_path)
-    return {"status": "started", "message": "Bắt đầu quét ảnh trong tiến trình ngầm."}
+    background_tasks.add_task(run_background_scan, source_path, request.workers)
+    return {"status": "started", "message": f"Bắt đầu quét ảnh với {request.workers} luồng xử lý song song."}
 
 @app.get("/api/scan-status")
 def get_scan_status():

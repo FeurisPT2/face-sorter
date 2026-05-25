@@ -5,7 +5,9 @@ const state = {
     sourceDir: "",
     exportDir: "",
     sensitivity: 1.12,
+    workers: 4,
     statusInterval: null,
+    scanStartTime: null,
     activeFaceData: null, // Cache details of face currently viewed in lightbox
     wizardActive: false,
     wizardIndex: 0,
@@ -31,6 +33,8 @@ const elements = {
     btnChooseSourceDir: document.getElementById('btn-choose-source'),
     btnChooseExportDir: document.getElementById('btn-choose-export'),
     exportStructureSelect: document.getElementById('export-structure'),
+    workersSlider: document.getElementById('workers-slider'),
+    workersValue: document.getElementById('workers-value'),
     sensitivityExplain: document.getElementById('sensitivity-explain'),
     visNode1: document.getElementById('vis-node-1'),
     visNode2: document.getElementById('vis-node-2'),
@@ -209,6 +213,15 @@ function initEvents() {
         });
     }
     
+    // Workers slider label update
+    if (elements.workersSlider) {
+        elements.workersSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            state.workers = val;
+            elements.workersValue.textContent = val;
+        });
+    }
+    
     // Initialize Visualizers
     updateSensitivityVisualizer(parseFloat(elements.sensitivitySlider.value));
     updateStructureVisualizer(elements.exportStructureSelect.value);
@@ -233,11 +246,17 @@ function startScanning() {
     elements.appStatusBadge.className = 'status-badge scanning';
     elements.appStatusText.textContent = 'Đang quét ảnh...';
     
+    // Record scan start time for speed calculation
+    state.scanStartTime = Date.now();
+    
+    // Read workers setting
+    const workersCount = elements.workersSlider ? parseInt(elements.workersSlider.value) : 4;
+    
     // Trigger Scan API
     fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_dir: srcDir })
+        body: JSON.stringify({ source_dir: srcDir, workers: workersCount })
     })
     .then(res => {
         if (!res.ok) {
@@ -265,10 +284,22 @@ function pollScanStatus() {
             const processed = status.processed_files;
             const pct = total > 0 ? (processed / total) * 100 : 0;
             
+            // Calculate speed (images per second)
+            let speedText = '';
+            if (processed > 0 && state.scanStartTime) {
+                const elapsedSec = (Date.now() - state.scanStartTime) / 1000;
+                const speed = (processed / elapsedSec).toFixed(1);
+                const remaining = total - processed;
+                const etaSec = remaining / (processed / elapsedSec);
+                const etaMin = Math.floor(etaSec / 60);
+                const etaSecRem = Math.floor(etaSec % 60);
+                speedText = ` • ${speed} ảnh/giây • ETA: ${etaMin}p${etaSecRem < 10 ? '0' : ''}${etaSecRem}s`;
+            }
+            
             elements.progressTitle.textContent = total > 0 ? `Đang xử lý ảnh (${Math.round(pct)}%)` : "Đang phân tích thư mục...";
             elements.progressFile.textContent = status.current_file || "...";
             elements.progressBarFill.style.width = `${pct}%`;
-            elements.progressCount.textContent = `Đã xử lý: ${processed}/${total} ảnh`;
+            elements.progressCount.textContent = `Đã xử lý: ${processed}/${total} ảnh${speedText}`;
             elements.progressFaces.textContent = `Đã tìm thấy: ${status.faces_found} khuôn mặt`;
             
             // Stats headers
