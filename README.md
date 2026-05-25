@@ -1,121 +1,123 @@
-# 🎓 Yearbook Face Sorter (Trình Phân Loại Ảnh Kỷ Yếu AI Thông Minh)
+# 🎓 Face Sorter (Intelligent AI-Powered Yearbook & Photo Classifier)
+
+🌐 [Đọc bản tiếng Việt tại đây](./README_VI.md)
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-5.0+-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)](https://opencv.org/)
 [![UI Style](https://img.shields.io/badge/UI--Style-Dark_Glassmorphism-purple?style=for-the-badge)](#)
 
-**Yearbook Face Sorter** là một ứng dụng web hiện đại, mạnh mẽ, sử dụng trí tuệ nhân tạo (AI) tiên tiến để tự động phát hiện, nhận dạng và phân loại khuôn mặt từ hàng trăm bức ảnh kỷ yếu tập thể thành các thư mục cá nhân riêng biệt. Giao diện người dùng được thiết kế tỉ mỉ theo phong cách **Dark Glassmorphism** siêu cao cấp, mang lại trải nghiệm mượt mà và trực quan vượt trội.
+**Face Sorter** is a modern, high-performance web application designed to automatically detect, recognize, and organize faces from hundreds of collective photos (e.g. school yearbooks, graduation photos, corporate events) into structured individual directories. The user interface features an exceptionally premium **Dark Glassmorphism** aesthetic, offering an ultra-smooth, responsive, and visually stunning interactive experience.
 
 ---
 
-## ✨ Các tính năng nổi bật
+## ✨ Features
 
-### 🧠 1. Công nghệ AI Nhận Diện Khuôn Mặt Tối Tân
-- **Phát hiện khuôn mặt (Face Detection)**: Sử dụng mô hình học sâu siêu tốc **YuNet** tích hợp trực tiếp qua bộ thư viện OpenCV nâng cao, cho khả năng phát hiện khuôn mặt cực kỳ chính xác ở nhiều góc độ và điều kiện ánh sáng.
-- **Trích xuất đặc trưng & Nhận dạng (Face Recognition)**: Sử dụng mô hình **SFace** của OpenCV để trích xuất vector đặc trưng (embeddings) 128 chiều có độ chính xác cao.
-- **Tự động gom nhóm (Clustering)**: Thuật toán gom nhóm mật độ **DBSCAN** tự động gom các khuôn mặt có độ tương đồng cao vào cùng một nhóm (một người) mà không cần khai báo số lượng người trước.
+### 🧠 1. State-of-the-Art Face Recognition AI
+- **Face Detection**: Powered by **YuNet**, a high-performance deep-learning-based detector integrated directly through OpenCV, enabling lightning-fast and highly accurate face localization across varying lighting conditions and facial angles.
+- **Feature Extraction & Identification**: Employs OpenCV's **SFace** model to extract dense, 128-dimensional deep face embeddings.
+- **Automatic Clustering**: Powered by the **DBSCAN** density-based algorithm, which automatically groups highly similar faces into distinct clusters (individuals) without requiring you to pre-define the number of people.
 
-### 🪄 2. Trình đặt tên từng người tuần tự (Interactive Naming Wizard)
-*Đây là tính năng độc quyền giúp tối ưu hoá tối đa trải nghiệm đặt tên thành viên sau phân loại.*
-- **Tự động kích hoạt**: Ngay sau khi quét xong, ứng dụng sẽ đề xuất mở trình đặt tên tuần tự.
-- **Thiết kế phân vùng thông minh**:
-  - *Cột bên trái*: Xem ảnh chân dung đại diện phóng to cùng ô nhập liệu được tự động focus và chọn sẵn văn bản để bạn gõ tên ngay lập tức.
-  - *Cột bên phải*: Hiển thị danh sách tất cả các ảnh khuôn mặt nhỏ được gom vào nhóm này để đối chiếu chéo, giúp bạn nhận diện chính xác 100%.
-- **Tối ưu phím tắt**: Nhập tên xong chỉ cần ấn `Enter` để Lưu & Tự động nhảy sang người tiếp theo, hoặc ấn `Escape` để đóng nhanh. Khi hoàn thành người cuối cùng, hiệu ứng pháo hoa confetti cực đẹp sẽ bùng nổ ăn mừng!
+### 🪄 2. Interactive Naming Wizard
+*A highly optimized step-by-step workflow designed for fast and intuitive human-in-the-loop naming.*
+- **Automatic Launch**: The app prompts you to launch the wizard immediately after scanning is complete.
+- **Intelligent Split View**:
+  - *Left Column*: Shows a large portrait avatar of the current group and a clean text input box which is automatically focused and pre-selected so you can start typing immediately.
+  - *Right Column*: Shows a gallery of all other face crops grouped in this cluster for visual cross-referencing, ensuring 100% correct identification.
+- **Keyboard Optimization**: Simply type the name and press <kbd>Enter</kbd> to automatically save and advance to the next person, or press <kbd>Escape</kbd> to dismiss. When all groups are named, a beautiful fullscreen confetti celebration will trigger!
 
-### 📂 3. Tự động gom & tách biệt Ảnh tập thể (Group Photos Export)
-- **Tự động nhận diện**: Hệ thống tự động phân tích và đếm số lượng khuôn mặt trên mỗi bức ảnh gốc.
-- **Xuất thư mục riêng biệt**: Ảnh có số lượng khuôn mặt lớn hơn hoặc bằng ngưỡng quy định (ví dụ $\ge 5$ mặt) sẽ được tự động xếp vào danh mục riêng **`Ảnh tập thể`**.
-- **Cấu hình trực quan trên Sidebar**:
-  - Tuỳ chỉnh ngưỡng ảnh tập thể linh hoạt bằng thanh trượt (từ `3` đến `10` khuôn mặt).
-  - Tuỳ chọn **"Loại bỏ ảnh tập thể khỏi thư mục riêng của từng người"** giúp tránh hiện tượng một ảnh tập thể cả lớp bị sao chép lặp lại vào hàng chục thư mục cá nhân gây lãng phí bộ nhớ và làm nhiễu thư mục của từng người.
+### 📂 3. Automatic Group/Collective Photos Filtering & Export
+- **Face Count Detection**: The app automatically analyzes and counts the number of detected faces in each original image.
+- **Dedicated Collective Directory**: Images with face counts greater than or equal to a configurable threshold (e.g. $\ge 5$ faces) are automatically designated as **Group Photos** and exported into a dedicated `Ảnh tập thể` folder.
+- **Flexible UI Controls on Sidebar**:
+  - Easily adjust the group photo threshold slider (from `3` to `10` faces).
+  - Enable **"Exclude group photos from individual folders"** checkbox to prevent large class/group photos from being copied into dozens of separate individual folders, keeping student folders extremely clean while saving significant disk space.
 
 ---
 
-## 🛠️ Kiến trúc công nghệ & Cấu trúc thư mục
+## 🛠️ Architecture & Folder Structure
 
-### Công nghệ sử dụng:
-- **Backend**: FastAPI (Python), OpenCV (YuNet & SFace), Scikit-Learn (DBSCAN gom cụm).
-- **Frontend**: HTML5, Vanilla CSS3 (Custom Design Tokens, animations), JavaScript ES6.
+### Tech Stack:
+- **Backend**: FastAPI (Python), OpenCV (YuNet & SFace), Scikit-Learn (DBSCAN).
+- **Frontend**: HTML5, Vanilla CSS3 (Custom Design Tokens, micro-animations), JavaScript ES6.
 
-### Sơ đồ thư mục:
+### Directory Layout:
 ```text
-yearbook-face-sorter/
-├── app.py                  # API Server FastAPI (Các endpoints nhận dạng, quét, đổi tên, xuất file)
+face-sorter/
+├── app.py                  # FastAPI API Server (Endpoints for scanning, renaming, exporting)
 ├── core/
-│   ├── clusterer.py        # Thuật toán gom cụm khuôn mặt sử dụng DBSCAN
-│   ├── exporter.py         # Bộ xuất ảnh thông minh (Phân loại thư mục cá nhân & Ảnh tập thể)
-│   └── face_processor.py   # Bộ xử lý ảnh (Đọc ảnh, chạy YuNet phát hiện, chạy SFace trích vector)
+│   ├── clusterer.py        # DBSCAN face clustering logic
+│   ├── exporter.py         # Smart image exporter (Separates group photos & individual folders)
+│   └── face_processor.py   # OpenCV face detection and embeddings generator
 ├── models/
-│   ├── face_detection_yunet_2023mar.onnx     # Mô hình phát hiện YuNet
-│   └── face_recognition_sface_2021dec.onnx   # Mô hình nhận dạng SFace
-├── static/                 # Giao diện Frontend web
-│   ├── app.js              # Logic tương tác điều khiển giao diện (Wizard, Confetti, API calls)
-│   ├── index.html          # Khung xương giao diện ứng dụng kỷ yếu
-│   └── styles.css          # Phong cách thiết kế Dark Glassmorphism cao cấp
-├── README.md               # Tài liệu hướng dẫn sử dụng dự án
-└── .gitignore              # Cấu hình bỏ qua các tệp không cần đẩy lên Git
+│   ├── face_detection_yunet_2023mar.onnx     # YuNet model weights
+│   └── face_recognition_sface_2021dec.onnx   # SFace model weights
+├── static/                 # Web assets
+│   ├── app.js              # Frontend UI logic (Wizard, Confetti, API integrations)
+│   ├── index.html          # Web application template
+│   └── styles.css          # Premium Dark Glassmorphism stylesheet
+├── README.md               # Main Project Documentation (English)
+├── README_VI.md            # Project Documentation (Vietnamese)
+└── .gitignore              # Git ignored files configuration
 ```
 
 ---
 
-## 🚀 Hướng dẫn cài đặt và khởi chạy nhanh
+## 🚀 Installation & Quick Start
 
-### 1. Chuẩn bị môi trường
-Yêu cầu hệ điều hành: Windows, macOS hoặc Linux đã cài đặt **Python 3.9 trở lên**.
+### 1. Prerequisites
+Ensure you have **Python 3.9 or higher** installed on Windows, macOS, or Linux.
 
-### 2. Clone dự án và truy cập thư mục
+### 2. Clone the Repository
 ```bash
-git clone <url-repo-github>
-cd yearbook-face-sorter
+git clone https://github.com/FeurisPT2/face-sorter.git
+cd face-sorter
 ```
 
-### 3. Khởi tạo môi trường ảo (Virtual Environment)
+### 3. Set Up a Virtual Môi Trường (Virtual Environment)
 ```bash
-# Tạo môi trường ảo
+# Create virtual environment
 python -m venv .venv
 
-# Kích hoạt môi trường ảo
-# Trên Linux/macOS:
+# Activate virtual environment
+# On Linux/macOS:
 source .venv/bin/activate
-# Trên Windows (Command Prompt):
+# On Windows (Command Prompt):
 .venv\Scripts\activate
-# Trên Windows (PowerShell):
+# On Windows (PowerShell):
 .venv\Scripts\Activate.ps1
 ```
 
-### 4. Cài đặt các thư viện phụ thuộc (Dependencies)
+### 4. Install Dependencies
 ```bash
 pip install --upgrade pip
 pip install fastapi uvicorn opencv-python numpy scikit-learn pydantic
 ```
 
-### 5. Khởi chạy ứng dụng
+### 5. Launch the Application
 ```bash
 python -m uvicorn app:app --reload --port 8000
 ```
-Sau khi chạy, hãy mở trình duyệt web bất kỳ và truy cập địa chỉ: [http://localhost:8000](http://localhost:8000).
+Open your web browser and navigate to: [http://localhost:8000](http://localhost:8000).
 
 ---
 
-## 💡 Hướng dẫn sử dụng ứng dụng
+## 💡 How to Use
 
-1. **Bước 1: Thiết lập thư mục**
-   - Nhập đường dẫn thư mục tuyệt đối chứa toàn bộ ảnh kỷ yếu của bạn vào ô **"Thư mục ảnh gốc"**. (Có thể bấm nút *"Tạo ảnh mẫu thử nghiệm nhanh"* bên dưới để tải tự động một số bức ảnh mẫu của các nhân vật lịch sử nổi tiếng để chạy thử).
-2. **Bước 2: Quét khuôn mặt**
-   - Nhấn nút **"Quét khuôn mặt AI"** và theo dõi tiến trình phân tích ảnh cực kỳ sinh động trên màn hình chính.
-3. **Bước 3: Đặt tên thành viên**
-   - Sau khi quét xong, hãy nhấn **OK** trên hộp thoại đề xuất gom nhóm để khởi động **Interactive Naming Wizard**.
-   - Gõ tên từng người và bấm `Enter` để hoàn thành đặt tên tuần tự siêu tốc.
-   - Bạn cũng có thể kéo thả thủ công các khuôn mặt bị phân loại nhầm giữa các thẻ người ở lưới màn hình chính để ghép nhóm lại.
-4. **Bước 4: Thiết lập Xuất kết quả**
-   - Nhập đường dẫn thư mục bạn muốn lưu ảnh đã phân loại tại ô **"Thư mục xuất"**.
-   - Thiết lập số mặt để nhận diện ảnh tập thể bằng **Ngưỡng ảnh tập thể**.
-   - Tích chọn *"Loại bỏ ảnh tập thể khỏi thư mục riêng của từng người"* nếu cần.
-   - Nhấn **"Xuất thư mục phân loại"** và tận hưởng kết quả sắp xếp hoàn hảo!
+1. **Step 1: Set Up Directories**
+   - Enter the absolute directory path containing your yearbook photos into **"Thư mục ảnh gốc" (Source Directory)**. (Or click the *"Tạo ảnh mẫu thử nghiệm nhanh"* button to automatically download famous historical portrait samples to test immediately).
+2. **Step 2: Run AI Face Scanning**
+   - Click **"Quét khuôn mặt AI" (Scan Faces)** and watch the real-time scanning progress bar on the main panel.
+3. **Step 3: Interactive Naming**
+   - Once completed, accept the prompt to start the **Interactive Naming Wizard**.
+   - Type each person's name and hit <kbd>Enter</kbd> to sequentially save and proceed.
+   - You can also drag-and-drop face crops directly onto any person's card in the main grid if there are any misclassifications.
+4. **Step 4: Configure & Export**
+   - Enter your target output path in **"Thư mục xuất" (Export Directory)**.
+   - Adjust the **Ngưỡng ảnh tập thể (Group Photo Threshold)** and choose whether to exclude group photos from individual folders.
+   - Click **"Xuất thư mục phân loại" (Export Organized Folders)**.
 
 ---
 
-## 📄 Giấy phép (License)
-Dự án được phân phối dưới giấy phép **MIT License**. Bạn hoàn toàn có thể sử dụng, sửa đổi và chia sẻ cho mục đích cá nhân cũng như thương mại.
+## 📄 License
+This project is licensed under the **MIT License** - you are free to use, modify, and distribute it for both personal and commercial purposes.
