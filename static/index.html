@@ -77,6 +77,17 @@
                     </div>
                     <input type="range" id="sensitivity-slider" min="0.6" max="1.6" step="0.02" value="1.12">
                     <p class="slider-hint">Giảm độ nhạy (kéo về trái) để gộp các nhóm khuôn mặt giống nhau. Tăng độ nhạy (kéo về phải) để tách nhóm kĩ hơn.</p>
+                    
+                    <!-- Interactive Sensitivity Visualizer -->
+                    <div class="visualizer-container" id="sensitivity-visualizer" style="margin-top: 14px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 12px; display: flex; flex-direction: column; gap: 10px; transition: var(--transition-normal);">
+                        <div class="visual-nodes" style="display: flex; justify-content: center; align-items: center; gap: 14px; height: 28px; position: relative;">
+                            <div id="vis-node-1" class="vis-node" style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-indigo); transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 8px var(--accent-indigo);"></div>
+                            <div id="vis-node-2" class="vis-node" style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-indigo); transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 8px var(--accent-indigo);"></div>
+                            <div id="vis-node-3" class="vis-node" style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-pink); transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 8px var(--accent-pink);"></div>
+                            <div id="vis-node-4" class="vis-node" style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-pink); transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 0 8px var(--accent-pink);"></div>
+                        </div>
+                        <span id="sensitivity-explain" style="font-size: 11px; font-weight: 600; text-align: center; color: var(--text-muted); line-height: 1.4;">Đang tải minh hoạ...</span>
+                    </div>
                 </div>
             </div>
 
@@ -116,6 +127,11 @@
                         <option value="person_first" style="background: var(--bg-dark);">Gom theo thành viên trước, thư mục con sau</option>
                         <option value="subdir_first" style="background: var(--bg-dark);">Gom theo thư mục con trước, thành viên sau</option>
                     </select>
+                </div>
+
+                <!-- Interactive Export Structure Visualizer -->
+                <div class="visualizer-container" id="structure-visualizer" style="margin-bottom: 16px; padding: 12px; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-glass); border-radius: 12px; font-family: monospace; font-size: 11px; color: #a5b4fc; line-height: 1.45; overflow-x: auto; box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);">
+                    <pre id="structure-preview" style="margin: 0; white-space: pre-wrap; font-family: inherit;">📂 output/</pre>
                 </div>
 
                 <button id="btn-export" class="btn btn-accent" style="width: 100%;">

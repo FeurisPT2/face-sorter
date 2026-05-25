@@ -31,6 +31,12 @@ const elements = {
     btnChooseSourceDir: document.getElementById('btn-choose-source'),
     btnChooseExportDir: document.getElementById('btn-choose-export'),
     exportStructureSelect: document.getElementById('export-structure'),
+    sensitivityExplain: document.getElementById('sensitivity-explain'),
+    visNode1: document.getElementById('vis-node-1'),
+    visNode2: document.getElementById('vis-node-2'),
+    visNode3: document.getElementById('vis-node-3'),
+    visNode4: document.getElementById('vis-node-4'),
+    structurePreview: document.getElementById('structure-preview'),
     
     // Header Stats
     appStatusBadge: document.getElementById('app-status-badge'),
@@ -136,6 +142,7 @@ function initEvents() {
         const val = parseFloat(e.target.value);
         state.sensitivity = val;
         elements.sensitivityValue.textContent = val.toFixed(2);
+        updateSensitivityVisualizer(val);
         debouncedCluster(val);
     });
     
@@ -194,6 +201,17 @@ function initEvents() {
     if (elements.btnChooseExportDir) {
         elements.btnChooseExportDir.addEventListener('click', () => chooseDirectory(elements.exportDirInput));
     }
+    
+    // Export structure select visualizer change
+    if (elements.exportStructureSelect) {
+        elements.exportStructureSelect.addEventListener('change', (e) => {
+            updateStructureVisualizer(e.target.value);
+        });
+    }
+    
+    // Initialize Visualizers
+    updateSensitivityVisualizer(parseFloat(elements.sensitivitySlider.value));
+    updateStructureVisualizer(elements.exportStructureSelect.value);
 }
 
 // --- Face Scanning Operations ---
@@ -892,6 +910,70 @@ function chooseDirectory(targetInput) {
     .catch(err => {
         showToast(err.message, "error");
     });
+}
+
+// --- Interactive Visualizers Operations ---
+function updateSensitivityVisualizer(val) {
+    if (!elements.sensitivityExplain) return;
+    
+    const nodes = [elements.visNode1, elements.visNode2, elements.visNode3, elements.visNode4];
+    
+    if (val < 0.95) {
+        // Low sensitivity: grouped loosely (nodes clustered tightly together, same color)
+        elements.sensitivityExplain.textContent = "Gộp rộng (Ít nhóm to, nguy cơ nhầm lẫn cao)";
+        elements.sensitivityExplain.style.color = "#f43f5e"; // Pink/Red warning
+        
+        nodes.forEach((n, idx) => {
+            n.style.background = "var(--accent-indigo)";
+            n.style.boxShadow = "0 0 10px var(--accent-indigo)";
+            // Bring them close
+            n.style.transform = `translateX(${(idx - 1.5) * 4}px)`;
+        });
+    } 
+    else if (val >= 0.95 && val <= 1.25) {
+        // Balanced sensitivity: optimally clustered (2 colored pairs, medium distance)
+        elements.sensitivityExplain.textContent = "Phân nhóm cân bằng (Tối ưu - Khuyến nghị)";
+        elements.sensitivityExplain.style.color = "var(--accent-emerald)";
+        
+        nodes.forEach((n, idx) => {
+            if (idx < 2) {
+                n.style.background = "var(--accent-indigo)";
+                n.style.boxShadow = "0 0 10px var(--accent-indigo)";
+                n.style.transform = `translateX(-12px)`;
+            } else {
+                n.style.background = "var(--accent-pink)";
+                n.style.boxShadow = "0 0 10px var(--accent-pink)";
+                n.style.transform = `translateX(12px)`;
+            }
+        });
+    } 
+    else {
+        // High sensitivity: strictly split (4 different colors, spaced far apart)
+        elements.sensitivityExplain.textContent = "Phân nhóm nghiêm ngặt (Dễ bị chia tách một người thành nhiều nhóm)";
+        elements.sensitivityExplain.style.color = "#f59e0b"; // Orange warning
+        
+        const colors = ["var(--accent-indigo)", "var(--accent-purple)", "var(--accent-pink)", "var(--accent-emerald)"];
+        nodes.forEach((n, idx) => {
+            n.style.background = colors[idx];
+            n.style.boxShadow = `0 0 10px ${colors[idx]}`;
+            n.style.transform = `translateX(${(idx - 1.5) * 20}px)`;
+        });
+    }
+}
+
+function updateStructureVisualizer(type) {
+    if (!elements.structurePreview) return;
+    
+    let treeText = "";
+    if (type === "person_first") {
+        treeText = `📂 output/\n├── 📂 Nguyễn Văn A/\n│   ├── 📂 Lớp 12A/\n│   │   └── 📄 anh_chan_dung.jpg\n│   └── 📂 Lớp 12B/\n│       └── 📄 anh_nhom.jpg\n└── 📂 Trần Thị B/\n    └── 📂 Lớp 12A/\n        └── 📄 anh_chup_chung.jpg`;
+    } else if (type === "subdir_first") {
+        treeText = `📂 output/\n├── 📂 Lớp 12A/\n│   ├── 📂 Nguyễn Văn A/\n│   │   └── 📄 anh_chan_dung.jpg\n│   └── 📂 Trần Thị B/\n│       └── 📄 anh_chup_chung.jpg\n└── 📂 Lớp 12B/\n    └── 📂 Nguyễn Văn A/\n        └── 📄 anh_nhom.jpg`;
+    } else { // flat
+        treeText = `📂 output/\n├── 📂 Nguyễn Văn A/\n│   ├── 📄 anh_chan_dung.jpg\n│   └── 📄 anh_nhom.jpg\n└── 📂 Trần Thị B/\n    └── 📄 anh_chup_chung.jpg`;
+    }
+    
+    elements.structurePreview.textContent = treeText;
 }
 
 // Initialize Application
