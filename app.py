@@ -55,6 +55,8 @@ class MoveRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     export_dir: str
+    source_dir: Optional[str] = None
+    structure_type: Optional[str] = "flat"
     group_threshold: Optional[int] = 5
     exclude_groups_from_individuals: Optional[bool] = False
 
@@ -244,6 +246,23 @@ def move_face_to_group(request: MoveRequest):
     
     return {"status": "success", "message": "Đã chuyển khuôn mặt sang nhóm mới."}
 
+@app.post("/api/choose-directory")
+def choose_directory():
+    import tkinter as tk
+    from tkinter import filedialog
+    try:
+        root = tk.Tk()
+        root.withdraw()  # Hide main window
+        root.attributes('-topmost', True)  # Bring dialog to the front
+        directory = filedialog.askdirectory(title="Chọn thư mục")
+        root.destroy()
+        if directory:
+            return {"directory": os.path.abspath(directory)}
+    except Exception as e:
+        print(f"Error selecting folder: {e}")
+        raise HTTPException(status_code=500, detail=f"Không thể khởi chạy hộp thoại chọn thư mục: {str(e)}")
+    return {"directory": ""}
+
 @app.post("/api/export")
 def export_images(request: ExportRequest):
     global clustered_groups
@@ -256,6 +275,8 @@ def export_images(request: ExportRequest):
         summary = FaceExporter.export_clusters(
             clustered_groups, 
             export_path,
+            source_dir=request.source_dir,
+            structure_type=request.structure_type,
             group_threshold=request.group_threshold,
             exclude_groups_from_individuals=request.exclude_groups_from_individuals
         )

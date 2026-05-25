@@ -41,10 +41,13 @@
                 <h2>Cấu hình thư mục</h2>
                 <div class="input-group">
                     <label for="source-dir">Thư mục ảnh gốc</label>
-                    <div class="input-wrapper">
-                        <input type="text" id="source-dir" placeholder="Ví dụ: /home/sennor/kỷ-yếu/ảnh" value="/home/sennor/.gemini/antigravity-ide/scratch/yearbook-face-sorter/sample_photos">
+                    <div class="input-wrapper" style="display: flex; gap: 8px;">
+                        <input type="text" id="source-dir" placeholder="Ví dụ: /home/sennor/kỷ-yếu/ảnh" value="/home/sennor/.gemini/antigravity-ide/scratch/yearbook-face-sorter/sample_photos" style="flex: 1;">
+                        <button id="btn-choose-source" class="btn btn-secondary" title="Chọn thư mục bằng giao diện" style="padding: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 12px;">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; margin: 0;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        </button>
                     </div>
-                    <p class="input-hint">Đường dẫn tuyệt đối chứa ảnh gốc của bạn</p>
+                    <p class="input-hint">Đường dẫn tuyệt đối hoặc chọn bằng biểu tượng 📂</p>
                 </div>
             </div>
 
@@ -81,7 +84,12 @@
                 <h2>Xuất kết quả</h2>
                 <div class="input-group" style="margin-bottom: 12px;">
                     <label for="export-dir">Thư mục xuất</label>
-                    <input type="text" id="export-dir" placeholder="Ví dụ: /home/sennor/kỷ-yếu/phân-loại" value="/home/sennor/.gemini/antigravity-ide/scratch/yearbook-face-sorter/output">
+                    <div class="input-wrapper" style="display: flex; gap: 8px;">
+                        <input type="text" id="export-dir" placeholder="Ví dụ: /home/sennor/kỷ-yếu/phân-loại" value="/home/sennor/.gemini/antigravity-ide/scratch/yearbook-face-sorter/output" style="flex: 1;">
+                        <button id="btn-choose-export" class="btn btn-secondary" title="Chọn thư mục bằng giao diện" style="padding: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 12px;">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; margin: 0;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Group Photo Export Config -->
@@ -99,6 +107,15 @@
                         <input type="checkbox" id="export-exclude-checkbox" style="margin-top: 3px; cursor: pointer; accent-color: var(--accent-emerald);">
                         <label for="export-exclude-checkbox" style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); cursor: pointer; line-height: 1.35;">Loại bỏ ảnh tập thể khỏi thư mục riêng của từng người</label>
                     </div>
+                </div>
+
+                <div class="input-group" style="margin-bottom: 16px;">
+                    <label for="export-structure">Cấu trúc xuất ảnh</label>
+                    <select id="export-structure" class="select-glass" style="width: 100%; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-glass); border-radius: 12px; padding: 12px 14px; color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 500; outline: none; transition: var(--transition-fast); cursor: pointer;">
+                        <option value="flat" style="background: var(--bg-dark);">Không bảo lưu thư mục con (Phẳng)</option>
+                        <option value="person_first" style="background: var(--bg-dark);">Gom theo thành viên trước, thư mục con sau</option>
+                        <option value="subdir_first" style="background: var(--bg-dark);">Gom theo thư mục con trước, thành viên sau</option>
+                    </select>
                 </div>
 
                 <button id="btn-export" class="btn btn-accent" style="width: 100%;">

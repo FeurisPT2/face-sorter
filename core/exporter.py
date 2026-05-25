@@ -4,13 +4,16 @@ from pathlib import Path
 
 class FaceExporter:
     @staticmethod
-    def export_clusters(cluster_groups, export_dir, group_threshold=5, exclude_groups_from_individuals=False):
+    def export_clusters(cluster_groups, export_dir, source_dir=None, structure_type="flat", group_threshold=5, exclude_groups_from_individuals=False):
         """
         Copies the original photos of each cluster group into organized folders,
-        and automatically groups collective/group photos into a separate directory.
+        and automatically groups collective/group photos into a separate directory,
+        optionally preserving original subdirectory structure.
         """
         export_dir = Path(export_dir)
         export_dir.mkdir(parents=True, exist_ok=True)
+        
+        source_path = Path(source_dir) if source_dir else None
         
         summary = {
             "success": True,
@@ -53,12 +56,30 @@ class FaceExporter:
                 if not orig_img_path.exists():
                     continue
                     
-                dest_file_path = group_photos_dir / orig_img_path.name
+                # Identify original subdirectory relative parent
+                rel_parent = ""
+                if source_path:
+                    try:
+                        rel_path = orig_img_path.relative_to(source_path)
+                        if rel_path.parent != Path("."):
+                            rel_parent = str(rel_path.parent)
+                    except Exception:
+                        pass
+                
+                # Determine final group photo destination dir
+                if rel_parent:
+                    dest_dir = group_photos_dir / rel_parent
+                else:
+                    dest_dir = group_photos_dir
+                    
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_file_path = dest_dir / orig_img_path.name
+                
                 counter = 1
                 while dest_file_path.exists():
                     stem = orig_img_path.stem
                     suffix = orig_img_path.suffix
-                    dest_file_path = group_photos_dir / f"{stem}_{counter}{suffix}"
+                    dest_file_path = dest_dir / f"{stem}_{counter}{suffix}"
                     counter += 1
                     
                 try:
@@ -76,8 +97,6 @@ class FaceExporter:
             safe_name = "".join(c for c in person_name if c.isalnum() or c in (" ", "_", "-")).strip()
             if not safe_name:
                 safe_name = f"Group_{group.get('cluster_id')}"
-                
-            group_dir = export_dir / safe_name
             
             copied_in_group = set()
             group_copied_count = 0
@@ -97,16 +116,37 @@ class FaceExporter:
                 if orig_img_path in copied_in_group:
                     continue
                     
-                # Ensure the individual folder is created only if we actually copy something
-                group_dir.mkdir(parents=True, exist_ok=True)
+                # Identify original subdirectory relative parent
+                rel_parent = ""
+                if source_path:
+                    try:
+                        rel_path = orig_img_path.relative_to(source_path)
+                        if rel_path.parent != Path("."):
+                            rel_parent = str(rel_path.parent)
+                    except Exception:
+                        pass
+                
+                # Determine destination folder path based on structure_type
+                if rel_parent:
+                    if structure_type == "person_first":
+                        dest_dir = export_dir / safe_name / rel_parent
+                    elif structure_type == "subdir_first":
+                        dest_dir = export_dir / rel_parent / safe_name
+                    else:  # flat
+                        dest_dir = export_dir / safe_name
+                else:
+                    dest_dir = export_dir / safe_name
+                
+                # Ensure the destination folder exists
+                dest_dir.mkdir(parents=True, exist_ok=True)
                 
                 # Handle filename collisions
-                dest_file_path = group_dir / orig_img_path.name
+                dest_file_path = dest_dir / orig_img_path.name
                 counter = 1
                 while dest_file_path.exists():
                     stem = orig_img_path.stem
                     suffix = orig_img_path.suffix
-                    dest_file_path = group_dir / f"{stem}_{counter}{suffix}"
+                    dest_file_path = dest_dir / f"{stem}_{counter}{suffix}"
                     counter += 1
                 
                 try:

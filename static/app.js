@@ -28,6 +28,9 @@ const elements = {
     exportThresholdSlider: document.getElementById('export-threshold-slider'),
     exportThresholdValue: document.getElementById('export-threshold-value'),
     exportExcludeCheckbox: document.getElementById('export-exclude-checkbox'),
+    btnChooseSourceDir: document.getElementById('btn-choose-source'),
+    btnChooseExportDir: document.getElementById('btn-choose-export'),
+    exportStructureSelect: document.getElementById('export-structure'),
     
     // Header Stats
     appStatusBadge: document.getElementById('app-status-badge'),
@@ -182,6 +185,14 @@ function initEvents() {
         elements.exportThresholdSlider.addEventListener('input', (e) => {
             elements.exportThresholdValue.textContent = `${e.target.value} mặt`;
         });
+    }
+    
+    // Directory chooser actions via Tkinter backend
+    if (elements.btnChooseSourceDir) {
+        elements.btnChooseSourceDir.addEventListener('click', () => chooseDirectory(elements.sourceDirInput));
+    }
+    if (elements.btnChooseExportDir) {
+        elements.btnChooseExportDir.addEventListener('click', () => chooseDirectory(elements.exportDirInput));
     }
 }
 
@@ -586,6 +597,8 @@ function exportResults() {
         return;
     }
     
+    const sourceDir = elements.sourceDirInput.value.trim();
+    const structureType = elements.exportStructureSelect.value || "flat";
     const groupThreshold = parseInt(elements.exportThresholdSlider.value, 10) || 5;
     const excludeGroups = elements.exportExcludeCheckbox.checked;
     
@@ -597,6 +610,8 @@ function exportResults() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             export_dir: exportDir,
+            source_dir: sourceDir,
+            structure_type: structureType,
             group_threshold: groupThreshold,
             exclude_groups_from_individuals: excludeGroups
         })
@@ -854,6 +869,29 @@ function closeWizard() {
     elements.wizardModal.classList.add('hidden');
     state.wizardActive = false;
     state.wizardGroups = [];
+}
+
+// --- Directory Chooser Operations ---
+function chooseDirectory(targetInput) {
+    showToast("Đang mở hộp thoại chọn thư mục...", "info");
+    fetch('/api/choose-directory', { method: 'POST' })
+    .then(res => {
+        if (!res.ok) {
+            return res.json().then(err => { throw new Error(err.detail || "Không thể chọn thư mục."); });
+        }
+        return res.json();
+    })
+    .then(data => {
+        if (data.directory) {
+            targetInput.value = data.directory;
+            showToast(`Đã chọn thư mục: ${data.directory}`, "success");
+        } else {
+            showToast("Đã huỷ chọn thư mục.", "warning");
+        }
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    });
 }
 
 // Initialize Application
