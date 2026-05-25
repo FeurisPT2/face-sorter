@@ -191,12 +191,15 @@ body {
     gap: 8px;
 }
 
-.sidebar-section h2 .heading-icon {
-    width: 16px;
-    height: 16px;
+svg.heading-icon,
+.sidebar-section h2 .heading-icon,
+.heading-icon {
+    width: 18px !important;
+    height: 18px !important;
     stroke: var(--accent-indigo);
     filter: drop-shadow(0 0 5px rgba(99, 102, 241, 0.5));
     flex-shrink: 0;
+    display: inline-block;
 }
 
 /* Inputs & Form Styling */
