@@ -1296,6 +1296,13 @@ input[type="range"]:active::-webkit-slider-thumb {
     object-fit: cover;
     border: 3px solid #0d1020;
     background: #1a1f35;
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+}
+
+.learn-avatar-wrap img:hover {
+    transform: scale(1.08);
+    border-color: #6366f1;
 }
 
 .learn-person-card h3 {
@@ -1333,9 +1340,21 @@ input[type="range"]:active::-webkit-slider-thumb {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex-wrap: wrap;
     padding: 18px 24px 24px;
+}
+
+.learn-footer #learn-btn-prev {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.learn-footer #learn-btn-prev .btn-icon {
+    width: 14px;
+    height: 14px;
 }
 
 .learn-footer-actions {

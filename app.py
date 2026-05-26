@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import threading
 import numpy as np
@@ -71,6 +72,7 @@ class LearnFeedbackRequest(BaseModel):
     cluster_b: str
     same: Optional[bool] = None
     skipped: bool = False
+    similarity: Optional[float] = None
 
 class MergeClustersRequest(BaseModel):
     source_cluster_id: str
@@ -487,6 +489,22 @@ def learn_stats():
     return LEARNING_STORE.get_stats()
 
 
+def _learn_feedback_response(merged: bool, stale: bool = False, message: str = ""):
+    suggestions = LEARNING_STORE.suggest_pairs(scan_results, clustered_groups, limit=12)
+    return {
+        "status": "stale" if stale else "success",
+        "merged": merged,
+        "stale": stale,
+        "message": message,
+        "optimal_eps": round(current_cluster_eps, 3),
+        "optimal_sensitivity": round(1.0 - current_cluster_eps, 2),
+        "stats": LEARNING_STORE.get_stats(),
+        "remaining_suggestions": len(suggestions),
+        "suggestions": suggestions,
+        "groups": list(clustered_groups.values()),
+    }
+
+
 @app.post("/api/learn/feedback")
 def learn_feedback(request: LearnFeedbackRequest):
     global current_cluster_eps
@@ -494,8 +512,11 @@ def learn_feedback(request: LearnFeedbackRequest):
     if request.cluster_a == request.cluster_b:
         raise HTTPException(status_code=400, detail="Hai nhóm phải khác nhau.")
 
+    a_exists = request.cluster_a in clustered_groups
+    b_exists = request.cluster_b in clustered_groups
+
     centroids, _ = FaceLearningStore.build_cluster_centroids(scan_results, clustered_groups)
-    sim = 0.5
+    sim = float(request.similarity) if request.similarity is not None else 0.5
     if request.cluster_a in centroids and request.cluster_b in centroids:
         sim = float(np.dot(centroids[request.cluster_a], centroids[request.cluster_b]))
 
@@ -508,14 +529,11 @@ def learn_feedback(request: LearnFeedbackRequest):
     )
 
     merged = False
-    if request.same is True and not request.skipped:
-        try:
-            merge_clusters(request.cluster_a, request.cluster_b)
-            merged = True
-        except HTTPException:
-            raise
-    elif request.same is False and not request.skipped:
-        pass
+    stale = not (a_exists and b_exists)
+
+    if request.same is True and not request.skipped and a_exists and b_exists:
+        merge_clusters(request.cluster_a, request.cluster_b)
+        merged = True
 
     if len(scan_results) >= 2:
         current_cluster_eps = FaceClusterer.auto_tune_epsilon(
@@ -525,16 +543,40 @@ def learn_feedback(request: LearnFeedbackRequest):
         )
     run_clustering(eps=current_cluster_eps)
 
-    remaining = LEARNING_STORE.suggest_pairs(scan_results, clustered_groups, limit=8)
+    if stale:
+        return _learn_feedback_response(
+            merged=False,
+            stale=True,
+            message="Một hoặc hai nhóm đã được gộp/thay đổi. Đã ghi nhận phản hồi và tải câu hỏi mới.",
+        )
+
+    return _learn_feedback_response(merged=merged)
+
+
+@app.post("/api/learn/reset")
+def learn_reset_all():
+    """Xóa toàn bộ dữ liệu AI đã học (file data/face_learning.json)."""
+    global current_cluster_eps
+
+    LEARNING_STORE.clear_all()
+
+    if scan_results and len(scan_results) >= 2:
+        current_cluster_eps = FaceClusterer.auto_tune_epsilon(
+            scan_results,
+            eps_offset=0.0,
+            verbose=False,
+        )
+        run_clustering(eps=current_cluster_eps)
+    elif scan_results:
+        run_clustering()
 
     return {
         "status": "success",
-        "merged": merged,
+        "message": "Đã xóa toàn bộ dữ liệu AI đã học.",
+        "stats": LEARNING_STORE.get_stats(),
+        "groups": list(clustered_groups.values()),
         "optimal_eps": round(current_cluster_eps, 3),
         "optimal_sensitivity": round(1.0 - current_cluster_eps, 2),
-        "stats": LEARNING_STORE.get_stats(),
-        "remaining_suggestions": len(remaining),
-        "groups": list(clustered_groups.values()),
     }
 
 
@@ -675,6 +717,74 @@ def create_samples():
         "export_dir": str(export_default_dir)
     }
 
+def _cache_dir_stats():
+    """Return (file_count, total_bytes) for face crop cache."""
+    if not CACHE_DIR.exists():
+        return 0, 0
+    files = [p for p in CACHE_DIR.iterdir() if p.is_file()]
+    total_bytes = sum(p.stat().st_size for p in files)
+    return len(files), total_bytes
+
+
+def clear_face_cache_dir():
+    """Delete all cropped face JPEGs in cache/. Returns (files_deleted, bytes_freed)."""
+    files_deleted, bytes_freed = _cache_dir_stats()
+    try:
+        if CACHE_DIR.exists():
+            shutil.rmtree(str(CACHE_DIR))
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Không thể xóa cache: {e}") from e
+    return files_deleted, bytes_freed
+
+
+def _invalidate_crop_references():
+    """Clear crop URLs in memory after cache files are removed."""
+    for group in clustered_groups.values():
+        for face in group.get("faces", []):
+            face["crop_image"] = ""
+    for face in scan_results:
+        face.pop("crop_path", None)
+        face["crop_image"] = ""
+
+
+@app.get("/api/cache-info")
+def get_cache_info():
+    files_deleted, total_bytes = _cache_dir_stats()
+    return {
+        "file_count": files_deleted,
+        "size_bytes": total_bytes,
+        "size_mb": round(total_bytes / (1024 * 1024), 2),
+    }
+
+
+@app.post("/api/clear-cache")
+def clear_cache():
+    if scan_state["status"] in ("scanning", "paused"):
+        raise HTTPException(
+            status_code=400,
+            detail="Không thể xóa cache khi đang quét. Hãy dừng hoặc chờ quét xong.",
+        )
+
+    files_deleted, bytes_freed = clear_face_cache_dir()
+    had_session = bool(scan_results or clustered_groups)
+    if had_session:
+        _invalidate_crop_references()
+
+    size_mb = round(bytes_freed / (1024 * 1024), 2)
+    return {
+        "status": "success",
+        "files_deleted": files_deleted,
+        "bytes_freed": bytes_freed,
+        "size_mb": size_mb,
+        "had_session": had_session,
+        "message": (
+            f"Đã xóa {files_deleted} ảnh crop ({size_mb} MB)."
+            + (" Quét lại để tạo thumbnail mới." if had_session else "")
+        ),
+    }
+
+
 @app.post("/api/reset")
 def reset_application():
     global scan_results, clustered_groups, person_names, custom_assignments, scan_state
@@ -697,13 +807,14 @@ def reset_application():
     scan_state["current_file"] = ""
     scan_state["faces_found"] = 0
     scan_state["error_message"] = ""
+    scan_state["optimal_eps"] = None
+    scan_state["optimal_sensitivity"] = None
     
     # 4. Clear cache directory contents
     try:
-        import shutil
-        if CACHE_DIR.exists():
-            shutil.rmtree(str(CACHE_DIR))
-            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        clear_face_cache_dir()
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error clearing cache directory: {e}")
         

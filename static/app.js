@@ -15,6 +15,7 @@ const state = {
     learnActive: false,
     learnQueue: [],
     learnIndex: 0,
+    learnHistory: [],
     activeFilter: "all", // "all", "warnings"
     sortByOption: "size_desc", // "size_desc", "size_asc", "name_asc", "warnings_desc"
     trayFaces: [], // Faces in the bottom sorting tray
@@ -26,6 +27,8 @@ const elements = {
     sourceDirInput: document.getElementById('source-dir'),
     exportDirInput: document.getElementById('export-dir'),
     btnScan: document.getElementById('btn-scan'),
+    btnClearCache: document.getElementById('btn-clear-cache'),
+    cacheSizeHint: document.getElementById('cache-size-hint'),
     btnExport: document.getElementById('btn-export'),
     btnCreateSamples: document.getElementById('btn-create-samples'),
     sensitivitySlider: document.getElementById('sensitivity-slider'),
@@ -51,6 +54,8 @@ const elements = {
     learnBtnSame: document.getElementById('learn-btn-same'),
     learnBtnDifferent: document.getElementById('learn-btn-different'),
     learnBtnSkip: document.getElementById('learn-btn-skip'),
+    learnBtnPrev: document.getElementById('learn-btn-prev'),
+    btnClearLearn: document.getElementById('btn-clear-learn'),
     exportThresholdSlider: document.getElementById('export-threshold-slider'),
     exportThresholdValue: document.getElementById('export-threshold-value'),
     exportExcludeCheckbox: document.getElementById('export-exclude-checkbox'),
@@ -335,14 +340,47 @@ function initEvents() {
     if (elements.learnBtnSkip) {
         elements.learnBtnSkip.addEventListener('click', () => submitLearnFeedback(null, true));
     }
+    if (elements.learnBtnPrev) {
+        elements.learnBtnPrev.addEventListener('click', learnGoBack);
+    }
+    if (elements.btnClearLearn) {
+        elements.btnClearLearn.addEventListener('click', clearAllLearnData);
+    }
+    if (elements.learnAvatarA) {
+        elements.learnAvatarA.addEventListener('click', () => {
+            const item = state.learnQueue[state.learnIndex];
+            if (item && item.face_a) {
+                openLightbox(item.face_a);
+            }
+        });
+        elements.learnAvatarA.style.cursor = 'pointer';
+        elements.learnAvatarA.title = 'Click để xem ảnh gốc';
+    }
+    if (elements.learnAvatarB) {
+        elements.learnAvatarB.addEventListener('click', () => {
+            const item = state.learnQueue[state.learnIndex];
+            if (item && item.face_b) {
+                openLightbox(item.face_b);
+            }
+        });
+        elements.learnAvatarB.style.cursor = 'pointer';
+        elements.learnAvatarB.title = 'Click để xem ảnh gốc';
+    }
     document.addEventListener('keydown', (e) => {
         if (!state.learnActive || elements.learnModal.classList.contains('hidden')) return;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); learnGoBack(); return; }
         if (e.key === 'y' || e.key === 'Y') submitLearnFeedback(true);
         if (e.key === 'n' || e.key === 'N') submitLearnFeedback(false);
-        if (e.key === 's' || e.key === 'S' || e.key === 'Escape') submitLearnFeedback(null, true);
+        if (e.key === 's' || e.key === 'S') submitLearnFeedback(null, true);
+        if (e.key === 'Escape') closeLearnModal();
     });
 
     refreshLearnStatsHint();
+
+    if (elements.btnClearCache) {
+        elements.btnClearCache.addEventListener('click', clearFaceCache);
+    }
+    refreshCacheSizeHint();
     
     // Re-calculate lightbox bounding box on image load or resize
     elements.lightboxImage.addEventListener('load', alignLightboxBbox);
@@ -576,6 +614,7 @@ function pollScanStatus() {
             
             // Fetch clustered groups, then offer learning quiz + naming wizard
             fetchClusters(state.sensitivity, false).then(() => {
+                refreshCacheSizeHint();
                 promptLearningAfterScan();
             });
         }
@@ -825,6 +864,7 @@ function startLearningQuiz(fromScan = false, presetSuggestions = null) {
         }
         state.learnQueue = suggestions;
         state.learnIndex = 0;
+        state.learnHistory = [];
         state.learnActive = true;
         elements.learnModal.classList.remove('hidden');
         renderLearnQuestion();
@@ -833,14 +873,68 @@ function startLearningQuiz(fromScan = false, presetSuggestions = null) {
     });
 }
 
+function syncLearnItemFromGroups(item) {
+    const ga = state.clusteredGroups[item.cluster_a];
+    const gb = state.clusteredGroups[item.cluster_b];
+    if (!ga || !gb) return false;
+    item.person_a = ga.person_name;
+    item.person_b = gb.person_name;
+    item.face_count_a = ga.faces?.length || 0;
+    item.face_count_b = gb.faces?.length || 0;
+    item.sample_crop_a = ga.faces?.[0]?.crop_image || item.sample_crop_a;
+    item.sample_crop_b = gb.faces?.[0]?.crop_image || item.sample_crop_b;
+    item.face_a = ga.faces?.[0] || null;
+    item.face_b = gb.faces?.[0] || null;
+    return true;
+}
+
+function updateLearnPrevButton() {
+    if (!elements.learnBtnPrev) return;
+    elements.learnBtnPrev.disabled =
+        state.learnIndex === 0 && state.learnHistory.length === 0;
+}
+
+function refreshLearnQueueFromServer(startIndex = 0) {
+    return fetch('/api/learn/suggestions?limit=12')
+        .then(res => {
+            if (!res.ok) throw new Error('Không tải được câu hỏi mới.');
+            return res.json();
+        })
+        .then(data => {
+            const suggestions = data.suggestions || [];
+            if (suggestions.length === 0) {
+                finishLearningQuiz();
+                return false;
+            }
+            state.learnQueue = suggestions;
+            state.learnIndex = Math.min(startIndex, suggestions.length - 1);
+            renderLearnQuestion();
+            return true;
+        });
+}
+
 function renderLearnQuestion() {
     const total = state.learnQueue.length;
-    const item = state.learnQueue[state.learnIndex];
-    if (!item) {
+    if (total === 0) {
         finishLearningQuiz();
         return;
     }
 
+    while (state.learnIndex < total) {
+        const item = state.learnQueue[state.learnIndex];
+        if (syncLearnItemFromGroups(item)) {
+            break;
+        }
+        state.learnIndex += 1;
+    }
+
+    if (state.learnIndex >= total) {
+        showToast('Các nhóm đã thay đổi. Đang tải câu hỏi mới...', 'info');
+        refreshLearnQueueFromServer(0);
+        return;
+    }
+
+    const item = state.learnQueue[state.learnIndex];
     const pct = ((state.learnIndex + 1) / total) * 100;
     elements.learnProgressText.textContent = `Câu hỏi ${state.learnIndex + 1} / ${total}`;
     elements.learnProgressBar.style.width = `${pct}%`;
@@ -859,15 +953,65 @@ function renderLearnQuestion() {
     elements.learnBtnSame.disabled = false;
     elements.learnBtnDifferent.disabled = false;
     elements.learnBtnSkip.disabled = false;
+    updateLearnPrevButton();
+}
+
+function applyLearnResponse(data) {
+    if (data.groups) {
+        state.clusteredGroups = {};
+        data.groups.forEach(g => { state.clusteredGroups[g.cluster_id] = g; });
+        elements.statTotalPeople.textContent = data.groups.length;
+        renderPeopleGrid();
+    }
+    if (data.optimal_sensitivity != null) {
+        state.sensitivity = data.optimal_sensitivity;
+        elements.sensitivitySlider.value = data.optimal_sensitivity;
+        elements.sensitivityValue.textContent = Number(data.optimal_sensitivity).toFixed(2);
+        updateSensitivityVisualizer(data.optimal_sensitivity);
+    }
+    refreshLearnStatsHint();
+
+    const suggestions = data.suggestions || [];
+    if (suggestions.length > 0) {
+        state.learnQueue = suggestions;
+        state.learnIndex = 0;
+        renderLearnQuestion();
+    } else {
+        finishLearningQuiz();
+    }
+}
+
+function learnGoBack() {
+    if (state.learnIndex > 0) {
+        state.learnIndex -= 1;
+        renderLearnQuestion();
+        return;
+    }
+    if (state.learnHistory.length === 0) return;
+
+    const prev = state.learnHistory.pop();
+    state.learnQueue = [prev.item, ...state.learnQueue.filter(
+        q => !(q.cluster_a === prev.item.cluster_a && q.cluster_b === prev.item.cluster_b)
+    )];
+    state.learnIndex = 0;
+    showToast('Chọn lại câu trước.', 'info');
+    renderLearnQuestion();
 }
 
 function submitLearnFeedback(same, skipped = false) {
     const item = state.learnQueue[state.learnIndex];
     if (!item) return;
 
+    if (!syncLearnItemFromGroups(item)) {
+        showToast('Nhóm không còn tồn tại. Đang tải câu hỏi mới...', 'info');
+        refreshLearnQueueFromServer(0);
+        return;
+    }
+
     elements.learnBtnSame.disabled = true;
     elements.learnBtnDifferent.disabled = true;
     elements.learnBtnSkip.disabled = true;
+    if (elements.learnBtnPrev) elements.learnBtnPrev.disabled = true;
 
     fetch('/api/learn/feedback', {
         method: 'POST',
@@ -877,6 +1021,7 @@ function submitLearnFeedback(same, skipped = false) {
             cluster_b: item.cluster_b,
             same: skipped ? null : same,
             skipped: skipped,
+            similarity: item.similarity,
         }),
     })
     .then(res => {
@@ -886,57 +1031,72 @@ function submitLearnFeedback(same, skipped = false) {
         return res.json();
     })
     .then(data => {
-        if (data.groups) {
-            state.clusteredGroups = {};
-            data.groups.forEach(g => { state.clusteredGroups[g.cluster_id] = g; });
-            elements.statTotalPeople.textContent = data.groups.length;
-            renderPeopleGrid();
+        if (!skipped) {
+            state.learnHistory.push({
+                item: { ...item },
+                same,
+                skipped,
+            });
         }
-        if (data.optimal_sensitivity != null) {
-            state.sensitivity = data.optimal_sensitivity;
-            elements.sensitivitySlider.value = data.optimal_sensitivity;
-            elements.sensitivityValue.textContent = Number(data.optimal_sensitivity).toFixed(2);
-            updateSensitivityVisualizer(data.optimal_sensitivity);
-        }
-        refreshLearnStatsHint();
 
-        let msg = skipped ? 'Đã bỏ qua câu hỏi.' : (same ? 'Đã gộp — AI học cùng một người.' : 'Đã ghi nhận — khác người.');
+        let msg = data.message || (
+            skipped ? 'Đã bỏ qua câu hỏi.' :
+            (same ? 'Đã gộp — AI học cùng một người.' : 'Đã ghi nhận — khác người.')
+        );
         if (data.merged) msg = 'Đã gộp hai nhóm thành một. AI cập nhật độ nhạy.';
-        showToast(msg, 'success');
+        if (data.stale) msg = data.message || 'Nhóm đã thay đổi — đã tải câu hỏi mới.';
+        showToast(msg, data.stale ? 'info' : 'success');
 
-        state.learnIndex += 1;
-        if (state.learnIndex >= state.learnQueue.length) {
-            const remaining = data.remaining_suggestions || 0;
-            if (remaining > 0) {
-                fetch('/api/learn/suggestions?limit=12')
-                    .then(r => r.json())
-                    .then(d => {
-                        state.learnQueue = d.suggestions || [];
-                        state.learnIndex = 0;
-                        if (state.learnQueue.length > 0) {
-                            renderLearnQuestion();
-                        } else {
-                            finishLearningQuiz();
-                        }
-                    });
-            } else {
-                finishLearningQuiz();
-            }
-        } else {
-            renderLearnQuestion();
-        }
+        applyLearnResponse(data);
     })
     .catch(err => {
         showToast(err.message, 'error');
         elements.learnBtnSame.disabled = false;
         elements.learnBtnDifferent.disabled = false;
         elements.learnBtnSkip.disabled = false;
+        updateLearnPrevButton();
     });
+}
+
+function clearAllLearnData() {
+    if (!confirm(
+        'Xóa toàn bộ dữ liệu AI đã học?\n\n' +
+        'Bao gồm: cặp cùng/khác người, lịch sử phản hồi, prototype tên, và chỉnh eps.\n' +
+        'Phân nhóm hiện tại sẽ được tính lại không dùng offset học.'
+    )) return;
+
+    fetch('/api/learn/reset', { method: 'POST' })
+        .then(res => {
+            if (!res.ok) {
+                return res.json().then(err => {
+                    throw new Error(err.detail || 'Không thể xóa dữ liệu học.');
+                });
+            }
+            return res.json();
+        })
+        .then(data => {
+            showToast(data.message || 'Đã xóa dữ liệu học.', 'success');
+            refreshLearnStatsHint();
+            if (data.groups) {
+                state.clusteredGroups = {};
+                data.groups.forEach(g => { state.clusteredGroups[g.cluster_id] = g; });
+                elements.statTotalPeople.textContent = data.groups.length;
+                renderPeopleGrid();
+            }
+            if (data.optimal_sensitivity != null) {
+                state.sensitivity = data.optimal_sensitivity;
+                elements.sensitivitySlider.value = data.optimal_sensitivity;
+                elements.sensitivityValue.textContent = Number(data.optimal_sensitivity).toFixed(2);
+                updateSensitivityVisualizer(data.optimal_sensitivity);
+            }
+        })
+        .catch(err => showToast(err.message, 'error'));
 }
 
 function finishLearningQuiz() {
     state.learnActive = false;
     state.learnQueue = [];
+    state.learnHistory = [];
     closeLearnModal();
     showToast('Hoàn tất phiên học! AI đã cập nhật phân loại.', 'success');
     refreshLearnStatsHint();
@@ -1602,6 +1762,69 @@ function exportResults() {
         elements.btnExport.disabled = false;
         showToast(err.message, "error");
     });
+}
+
+// --- Cache management ---
+function refreshCacheSizeHint() {
+    if (!elements.cacheSizeHint) return;
+    fetch('/api/cache-info')
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+            if (!data) {
+                elements.cacheSizeHint.textContent = 'Cache: không đọc được';
+                return;
+            }
+            if (data.file_count === 0) {
+                elements.cacheSizeHint.textContent = 'Cache: trống (0 file)';
+            } else {
+                elements.cacheSizeHint.textContent =
+                    `Cache: ${data.file_count} file (~${data.size_mb} MB)`;
+            }
+        })
+        .catch(() => {
+            elements.cacheSizeHint.textContent = 'Cache: —';
+        });
+}
+
+function clearFaceCache() {
+    const hasGroups = Object.keys(state.clusteredGroups).length > 0;
+    let msg =
+        'Xóa toàn bộ ảnh crop trong thư mục cache/?\n\n' +
+        'Giúp giải phóng dung lượng ổ đĩa.';
+    if (hasGroups) {
+        msg +=
+            '\n\nẢnh thumbnail trên lưới kết quả sẽ trống cho đến khi bạn quét lại ' +
+            '(dữ liệu phân nhóm trong RAM vẫn giữ).';
+    }
+    if (!confirm(msg)) return;
+
+    elements.btnClearCache.disabled = true;
+    fetch('/api/clear-cache', { method: 'POST' })
+        .then(res => {
+            if (!res.ok) {
+                return res.json().then(err => {
+                    throw new Error(err.detail || 'Không thể xóa cache.');
+                });
+            }
+            return res.json();
+        })
+        .then(data => {
+            showToast(data.message || 'Đã xóa cache.', 'success');
+            refreshCacheSizeHint();
+            if (data.had_session) {
+                Object.values(state.clusteredGroups).forEach(group => {
+                    group.faces.forEach(f => { f.crop_image = ''; });
+                });
+                renderPeopleGrid();
+                if (state.activeGroup) {
+                    openGroupDetails(state.activeGroup.cluster_id);
+                }
+            }
+        })
+        .catch(err => showToast(err.message, 'error'))
+        .finally(() => {
+            elements.btnClearCache.disabled = false;
+        });
 }
 
 // --- Create Sample Photos (Mock Test) ---

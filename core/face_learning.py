@@ -69,6 +69,18 @@ class FaceLearningStore:
       "prototype_count": len(self._data.get("person_prototypes", [])),
     }
 
+  def clear_all(self):
+    """Xóa toàn bộ dữ liệu học (must/cannot link, feedback, prototypes, eps offset)."""
+    self._data = {
+      "must_link": [],
+      "cannot_link": [],
+      "dismissed": [],
+      "feedback": [],
+      "eps_offset": 0.0,
+      "person_prototypes": [],
+    }
+    self.save()
+
   def record_feedback(
     self,
     cluster_a: str,

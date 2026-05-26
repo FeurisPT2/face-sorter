@@ -41,7 +41,7 @@ class FaceProcessor:
     RETINAFACE_URL = "https://github.com/yakhyo/retinaface-pytorch/releases/download/v0.0.1/retinaface_mv1_0.25.onnx"
     ARCFACE_URL = "https://huggingface.co/yolkailtd/face-swap-models/resolve/main/insightface/models/buffalo_l/w600k_r50.onnx"
     
-    MIN_LAPLACIAN_VAR = 75.0  # Minimum sharpness score (blurry face filter)
+    MIN_LAPLACIAN_VAR = 350.0  # Minimum sharpness score (blurry face filter)
     MAX_BLACK_RATIO = 0.10    # Maximum pure black pixels ratio (cropped face filter)
     
     # RetinaFace MobileNet0.25 standard anchor config
@@ -534,6 +534,13 @@ class FaceProcessor:
                     gray_face = cv2.cvtColor(aligned_face, cv2.COLOR_BGR2GRAY)
                     laplacian_var = cv2.Laplacian(gray_face, cv2.CV_64F).var()
                     if laplacian_var < self.MIN_LAPLACIAN_VAR:
+                        continue
+
+                    # 2b. Filter out pixelated/mosaic blurred faces
+                    diff_h = np.all(aligned_face[:, 1:] == aligned_face[:, :-1], axis=-1)
+                    diff_v = np.all(aligned_face[1:, :] == aligned_face[:-1, :], axis=-1)
+                    ratio_flat = (np.sum(diff_h) + np.sum(diff_v)) / (112 * 111 * 2)
+                    if ratio_flat > 0.12:
                         continue
                     
                     # Extract 512-d feature representation using ArcFace INT8
