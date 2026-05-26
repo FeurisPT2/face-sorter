@@ -12,8 +12,13 @@ const state = {
     wizardActive: false,
     wizardIndex: 0,
     wizardGroups: [],
+    learnActive: false,
+    learnQueue: [],
+    learnIndex: 0,
     activeFilter: "all", // "all", "warnings"
-    sortByOption: "size_desc" // "size_desc", "size_asc", "name_asc", "warnings_desc"
+    sortByOption: "size_desc", // "size_desc", "size_asc", "name_asc", "warnings_desc"
+    trayFaces: [], // Faces in the bottom sorting tray
+    contextMenuFace: null // Face currently targeted by the custom context menu
 };
 
 // DOM Elements
@@ -30,6 +35,22 @@ const elements = {
     configExport: document.getElementById('config-export'),
     configNaming: document.getElementById('config-naming'),
     btnWizard: document.getElementById('btn-wizard'),
+    btnLearn: document.getElementById('btn-learn'),
+    learnStatsHint: document.getElementById('learn-stats-hint'),
+    learnModal: document.getElementById('learn-modal'),
+    learnCloseBtn: document.getElementById('learn-close-btn'),
+    learnProgressText: document.getElementById('learn-progress-text'),
+    learnProgressBar: document.getElementById('learn-progress-bar'),
+    learnSimilarityText: document.getElementById('learn-similarity-text'),
+    learnAvatarA: document.getElementById('learn-avatar-a'),
+    learnAvatarB: document.getElementById('learn-avatar-b'),
+    learnNameA: document.getElementById('learn-name-a'),
+    learnNameB: document.getElementById('learn-name-b'),
+    learnCountA: document.getElementById('learn-count-a'),
+    learnCountB: document.getElementById('learn-count-b'),
+    learnBtnSame: document.getElementById('learn-btn-same'),
+    learnBtnDifferent: document.getElementById('learn-btn-different'),
+    learnBtnSkip: document.getElementById('learn-btn-skip'),
     exportThresholdSlider: document.getElementById('export-threshold-slider'),
     exportThresholdValue: document.getElementById('export-threshold-value'),
     exportExcludeCheckbox: document.getElementById('export-exclude-checkbox'),
@@ -99,6 +120,21 @@ const elements = {
     lightboxPhotoName: document.getElementById('lightbox-photo-name'),
     lightboxPhotoPath: document.getElementById('lightbox-photo-path'),
     
+    // Face Sorting Tray Elements
+    sortTray: document.getElementById('sort-tray'),
+    trayCountBadge: document.getElementById('tray-count-badge'),
+    btnTrayCreateGroup: document.getElementById('btn-tray-create-group'),
+    btnTrayClear: document.getElementById('btn-tray-clear'),
+    btnTrayToggle: document.getElementById('btn-tray-toggle'),
+    trayEmptyState: document.getElementById('tray-empty-state'),
+    trayFacesList: document.getElementById('tray-faces-list'),
+    
+    // Custom Context Menu Elements
+    faceContextMenu: document.getElementById('face-context-menu'),
+    menuAddToTray: document.getElementById('menu-add-to-tray'),
+    menuCreateGroup: document.getElementById('menu-create-group'),
+    menuViewOriginal: document.getElementById('menu-view-original'),
+    
     // Confetti
     confettiCanvas: document.getElementById('confetti-canvas'),
     toastContainer: document.getElementById('toast-container')
@@ -149,6 +185,90 @@ function debounce(func, wait) {
 function initEvents() {
     elements.btnScan.addEventListener('click', startScanning);
     elements.btnExport.addEventListener('click', exportResults);
+    
+    // --- Sorting Tray Event Listeners ---
+    if (elements.btnTrayToggle) {
+        elements.btnTrayToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            elements.sortTray.classList.toggle('collapsed');
+        });
+        elements.sortTray.querySelector('.tray-header').addEventListener('click', (e) => {
+            if (!e.target.closest('.tray-header-actions')) {
+                elements.sortTray.classList.toggle('collapsed');
+            }
+        });
+    }
+    
+    if (elements.btnTrayClear) {
+        elements.btnTrayClear.addEventListener('click', clearTray);
+    }
+    
+    if (elements.btnTrayCreateGroup) {
+        elements.btnTrayCreateGroup.addEventListener('click', createGroupFromTray);
+    }
+    
+    // Drag & Drop to Tray
+    if (elements.sortTray) {
+        elements.sortTray.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            elements.sortTray.classList.add('drag-over');
+        });
+        
+        elements.sortTray.addEventListener('dragleave', () => {
+            elements.sortTray.classList.remove('drag-over');
+        });
+        
+        elements.sortTray.addEventListener('drop', (e) => {
+            e.preventDefault();
+            elements.sortTray.classList.remove('drag-over');
+            
+            const faceId = e.dataTransfer.getData('text/plain');
+            const isFromTray = e.dataTransfer.getData('source/tray') === 'true';
+            
+            if (faceId && !isFromTray) {
+                let faceObj = null;
+                if (state.activeGroup) {
+                    faceObj = state.activeGroup.faces.find(f => f.id === faceId);
+                }
+                
+                if (!faceObj) {
+                    for (const group of Object.values(state.clusteredGroups)) {
+                        faceObj = group.faces.find(f => f.id === faceId);
+                        if (faceObj) break;
+                    }
+                }
+                
+                if (faceObj) {
+                    addFaceToTray(faceObj);
+                    elements.sortTray.classList.remove('collapsed');
+                }
+            }
+        });
+    }
+    
+    // --- Context Menu Event Listeners ---
+    if (elements.faceContextMenu) {
+        document.addEventListener('click', hideFaceContextMenu);
+        window.addEventListener('resize', hideFaceContextMenu);
+        
+        if (elements.modalFacesGallery) {
+            elements.modalFacesGallery.addEventListener('scroll', hideFaceContextMenu);
+        }
+        
+        elements.menuAddToTray.addEventListener('click', () => {
+            if (state.contextMenuFace) {
+                addFaceToTray(state.contextMenuFace);
+            }
+        });
+        
+        elements.menuCreateGroup.addEventListener('click', createGroupFromSingleFace);
+        
+        elements.menuViewOriginal.addEventListener('click', () => {
+            if (state.contextMenuFace) {
+                openLightbox(state.contextMenuFace);
+            }
+        });
+    }
     if (elements.btnPauseScan) {
         elements.btnPauseScan.addEventListener('click', togglePauseScan);
     }
@@ -198,6 +318,31 @@ function initEvents() {
     
     // Sidebar wizard trigger button
     elements.btnWizard.addEventListener('click', startNamingWizard);
+
+    if (elements.btnLearn) {
+        elements.btnLearn.addEventListener('click', () => startLearningQuiz(false));
+    }
+    if (elements.learnCloseBtn) {
+        elements.learnCloseBtn.addEventListener('click', closeLearnModal);
+        elements.learnModal.querySelector('.modal-backdrop').addEventListener('click', closeLearnModal);
+    }
+    if (elements.learnBtnSame) {
+        elements.learnBtnSame.addEventListener('click', () => submitLearnFeedback(true));
+    }
+    if (elements.learnBtnDifferent) {
+        elements.learnBtnDifferent.addEventListener('click', () => submitLearnFeedback(false));
+    }
+    if (elements.learnBtnSkip) {
+        elements.learnBtnSkip.addEventListener('click', () => submitLearnFeedback(null, true));
+    }
+    document.addEventListener('keydown', (e) => {
+        if (!state.learnActive || elements.learnModal.classList.contains('hidden')) return;
+        if (e.key === 'y' || e.key === 'Y') submitLearnFeedback(true);
+        if (e.key === 'n' || e.key === 'N') submitLearnFeedback(false);
+        if (e.key === 's' || e.key === 'S' || e.key === 'Escape') submitLearnFeedback(null, true);
+    });
+
+    refreshLearnStatsHint();
     
     // Re-calculate lightbox bounding box on image load or resize
     elements.lightboxImage.addEventListener('load', alignLightboxBbox);
@@ -307,6 +452,9 @@ function initEvents() {
         }
     })
     .catch(err => console.log("System info fetch error:", err));
+    
+    // Initialize Sorting Tray UI to collapsed/hidden state
+    updateTrayUI();
 }
 
 // --- Face Scanning Operations ---
@@ -416,8 +564,20 @@ function pollScanStatus() {
             elements.appStatusBadge.className = 'status-badge done';
             elements.appStatusText.textContent = 'Hoàn thành phân loại';
             
-            // Fetch initial clustered groups and prompt for Naming Wizard
-            fetchClusters(state.sensitivity, true);
+            // Apply server auto-tuned sensitivity after scan
+            if (status.optimal_sensitivity != null) {
+                const tuned = Number(status.optimal_sensitivity);
+                state.sensitivity = tuned;
+                elements.sensitivitySlider.value = tuned;
+                elements.sensitivityValue.textContent = tuned.toFixed(2);
+                updateSensitivityVisualizer(tuned);
+                showToast(`Đã tự tối ưu độ nhạy: ${tuned.toFixed(2)}`, "info");
+            }
+            
+            // Fetch clustered groups, then offer learning quiz + naming wizard
+            fetchClusters(state.sensitivity, false).then(() => {
+                promptLearningAfterScan();
+            });
         }
         else if (status.status === 'error') {
             clearInterval(state.statusInterval);
@@ -549,7 +709,7 @@ function fetchClusters(sensitivity, triggerWizardAfterFetch = false) {
     elements.appStatusText.textContent = 'Đang xếp nhóm khuôn mặt...';
     
     const eps = (1.0 - sensitivity).toFixed(2);
-    fetch(`/api/cluster?eps=${eps}`)
+    return fetch(`/api/cluster?eps=${eps}`)
     .then(res => res.json())
     .then(groups => {
         state.clusteredGroups = {};
@@ -587,10 +747,205 @@ function fetchClusters(sensitivity, triggerWizardAfterFetch = false) {
                 }
             }, 500);
         }
+        return groups;
     })
     .catch(err => {
         showToast("Không thể phân cụm khuôn mặt.", "error");
+        throw err;
     });
+}
+
+// --- AI Learning (Google Photos style) ---
+function refreshLearnStatsHint() {
+    if (!elements.learnStatsHint) return;
+    fetch('/api/learn/stats')
+        .then(res => res.json())
+        .then(stats => {
+            const fb = stats.feedback_count || 0;
+            const offset = stats.eps_offset || 0;
+            if (fb === 0) {
+                elements.learnStatsHint.textContent = 'Chưa có phản hồi — bấm nút trên để dạy AI.';
+            } else {
+                const sign = offset >= 0 ? '+' : '';
+                elements.learnStatsHint.textContent =
+                    `Đã học ${fb} câu trả lời • chỉnh eps ${sign}${offset.toFixed(3)}`;
+            }
+        })
+        .catch(() => {});
+}
+
+function promptLearningAfterScan() {
+    fetch('/api/learn/suggestions?limit=8')
+        .then(res => res.json())
+        .then(data => {
+            const count = (data.suggestions || []).length;
+            refreshLearnStatsHint();
+            if (count === 0) {
+                promptNamingWizardAfterScan();
+                return;
+            }
+            const startLearn = confirm(
+                `AI tìm thấy ${count} cặp nhóm có thể cùng một người.\n\n` +
+                `Trả lời vài câu hỏi (giống Google Photos) để AI học và tối ưu phân loại?\n\n` +
+                `• Cùng người → gộp nhóm\n• Khác người → không gộp\n• Bỏ qua → hỏi lại sau`
+            );
+            if (startLearn) {
+                startLearningQuiz(true, data.suggestions);
+            } else {
+                promptNamingWizardAfterScan();
+            }
+        })
+        .catch(() => promptNamingWizardAfterScan());
+}
+
+function promptNamingWizardAfterScan() {
+    const groups = Object.values(state.clusteredGroups);
+    if (groups.length === 0) return;
+    setTimeout(() => {
+        const start = confirm("Phân loại hoàn tất! Bạn có muốn đặt tên lần lượt từng người ngay bây giờ không?");
+        if (start) startNamingWizard();
+    }, 400);
+}
+
+function startLearningQuiz(fromScan = false, presetSuggestions = null) {
+    const load = presetSuggestions
+        ? Promise.resolve({ suggestions: presetSuggestions })
+        : fetch('/api/learn/suggestions?limit=12').then(res => {
+            if (!res.ok) throw new Error('Không tải được gợi ý học.');
+            return res.json();
+        });
+
+    load.then(data => {
+        const suggestions = data.suggestions || [];
+        if (suggestions.length === 0) {
+            showToast('Không còn cặp nhóm nào cần xác nhận. AI đã khá chắc chắn!', 'info');
+            if (!fromScan) return;
+            promptNamingWizardAfterScan();
+            return;
+        }
+        state.learnQueue = suggestions;
+        state.learnIndex = 0;
+        state.learnActive = true;
+        elements.learnModal.classList.remove('hidden');
+        renderLearnQuestion();
+    }).catch(err => {
+        showToast(err.message || 'Không thể bắt đầu chế độ học.', 'error');
+    });
+}
+
+function renderLearnQuestion() {
+    const total = state.learnQueue.length;
+    const item = state.learnQueue[state.learnIndex];
+    if (!item) {
+        finishLearningQuiz();
+        return;
+    }
+
+    const pct = ((state.learnIndex + 1) / total) * 100;
+    elements.learnProgressText.textContent = `Câu hỏi ${state.learnIndex + 1} / ${total}`;
+    elements.learnProgressBar.style.width = `${pct}%`;
+
+    const simPct = Math.round((item.similarity || 0) * 100);
+    elements.learnSimilarityText.textContent =
+        `Độ giống nhau: ${simPct}% (khoảng cách cosine ${(item.cosine_distance || 0).toFixed(2)})`;
+
+    elements.learnAvatarA.src = item.sample_crop_a || '';
+    elements.learnAvatarB.src = item.sample_crop_b || '';
+    elements.learnNameA.textContent = item.person_a || 'Nhóm A';
+    elements.learnNameB.textContent = item.person_b || 'Nhóm B';
+    elements.learnCountA.textContent = `${item.face_count_a || 0} ảnh khuôn mặt`;
+    elements.learnCountB.textContent = `${item.face_count_b || 0} ảnh khuôn mặt`;
+
+    elements.learnBtnSame.disabled = false;
+    elements.learnBtnDifferent.disabled = false;
+    elements.learnBtnSkip.disabled = false;
+}
+
+function submitLearnFeedback(same, skipped = false) {
+    const item = state.learnQueue[state.learnIndex];
+    if (!item) return;
+
+    elements.learnBtnSame.disabled = true;
+    elements.learnBtnDifferent.disabled = true;
+    elements.learnBtnSkip.disabled = true;
+
+    fetch('/api/learn/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            cluster_a: item.cluster_a,
+            cluster_b: item.cluster_b,
+            same: skipped ? null : same,
+            skipped: skipped,
+        }),
+    })
+    .then(res => {
+        if (!res.ok) {
+            return res.json().then(err => { throw new Error(err.detail || 'Lỗi gửi phản hồi.'); });
+        }
+        return res.json();
+    })
+    .then(data => {
+        if (data.groups) {
+            state.clusteredGroups = {};
+            data.groups.forEach(g => { state.clusteredGroups[g.cluster_id] = g; });
+            elements.statTotalPeople.textContent = data.groups.length;
+            renderPeopleGrid();
+        }
+        if (data.optimal_sensitivity != null) {
+            state.sensitivity = data.optimal_sensitivity;
+            elements.sensitivitySlider.value = data.optimal_sensitivity;
+            elements.sensitivityValue.textContent = Number(data.optimal_sensitivity).toFixed(2);
+            updateSensitivityVisualizer(data.optimal_sensitivity);
+        }
+        refreshLearnStatsHint();
+
+        let msg = skipped ? 'Đã bỏ qua câu hỏi.' : (same ? 'Đã gộp — AI học cùng một người.' : 'Đã ghi nhận — khác người.');
+        if (data.merged) msg = 'Đã gộp hai nhóm thành một. AI cập nhật độ nhạy.';
+        showToast(msg, 'success');
+
+        state.learnIndex += 1;
+        if (state.learnIndex >= state.learnQueue.length) {
+            const remaining = data.remaining_suggestions || 0;
+            if (remaining > 0) {
+                fetch('/api/learn/suggestions?limit=12')
+                    .then(r => r.json())
+                    .then(d => {
+                        state.learnQueue = d.suggestions || [];
+                        state.learnIndex = 0;
+                        if (state.learnQueue.length > 0) {
+                            renderLearnQuestion();
+                        } else {
+                            finishLearningQuiz();
+                        }
+                    });
+            } else {
+                finishLearningQuiz();
+            }
+        } else {
+            renderLearnQuestion();
+        }
+    })
+    .catch(err => {
+        showToast(err.message, 'error');
+        elements.learnBtnSame.disabled = false;
+        elements.learnBtnDifferent.disabled = false;
+        elements.learnBtnSkip.disabled = false;
+    });
+}
+
+function finishLearningQuiz() {
+    state.learnActive = false;
+    state.learnQueue = [];
+    closeLearnModal();
+    showToast('Hoàn tất phiên học! AI đã cập nhật phân loại.', 'success');
+    refreshLearnStatsHint();
+    promptNamingWizardAfterScan();
+}
+
+function closeLearnModal() {
+    state.learnActive = false;
+    if (elements.learnModal) elements.learnModal.classList.add('hidden');
 }
 
 function triggerAutoTune() {
@@ -729,9 +1084,19 @@ function renderPeopleGrid() {
             
             const faceId = e.dataTransfer.getData('text/plain');
             const targetClusterId = card.dataset.clusterId;
+            const isFromTray = e.dataTransfer.getData('source/tray') === 'true';
             
             if (faceId && targetClusterId) {
-                moveFaceToGroup(faceId, targetClusterId);
+                if (isFromTray && state.trayFaces.length > 1) {
+                    const choice = confirm(`Bạn muốn di chuyển TOÀN BỘ ${state.trayFaces.length} ảnh trong khay vào nhóm này?\n\n- Chọn OK: Di chuyển toàn bộ ${state.trayFaces.length} ảnh trong khay.\n- Chọn Cancel: Chỉ di chuyển duy nhất ảnh vừa kéo.`);
+                    if (choice) {
+                        moveMultipleFacesToGroup(state.trayFaces.map(f => f.id), targetClusterId);
+                    } else {
+                        moveFaceToGroup(faceId, targetClusterId);
+                    }
+                } else {
+                    moveFaceToGroup(faceId, targetClusterId);
+                }
             }
         });
         
@@ -783,6 +1148,19 @@ function openGroupDetails(clusterId) {
         faceCard.addEventListener('click', (e) => {
             e.stopPropagation();
             openLightbox(face);
+        });
+        
+        // Right-click Context Menu
+        faceCard.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            state.contextMenuFace = face;
+            
+            // Show custom context menu at coordinates
+            elements.faceContextMenu.style.left = `${e.clientX}px`;
+            elements.faceContextMenu.style.top = `${e.clientY}px`;
+            elements.faceContextMenu.classList.remove('hidden');
         });
         
         // --- Drag Start for Face Cards ---
@@ -866,12 +1244,273 @@ function moveFaceToGroup(faceId, targetClusterId) {
     })
     .then(() => {
         showToast("Đã chuyển khuôn mặt sang nhóm mới thành công.", "success");
+        // Remove from tray if it was inside
+        state.trayFaces = state.trayFaces.filter(f => f.id !== faceId);
+        updateTrayUI();
+        
         // Fetch new clusters to update everything cleanly
         fetchClusters(state.sensitivity);
+        
+        // If details modal is active, close it to prevent inconsistencies
+        closeModal();
     })
     .catch(err => {
         showToast(err.message, "error");
     });
+}
+
+// --- Move Multiple Faces to Group ---
+function moveMultipleFacesToGroup(faceIds, targetClusterId) {
+    showToast(`Đang di chuyển ${faceIds.length} ảnh...`, "info");
+    
+    const promises = faceIds.map(faceId => 
+        fetch('/api/move-face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ face_id: faceId, target_cluster_id: targetClusterId })
+        })
+    );
+    
+    Promise.all(promises)
+    .then(responses => {
+        const failed = responses.filter(res => !res.ok);
+        if (failed.length > 0) {
+            throw new Error(`Có ${failed.length} ảnh di chuyển thất bại.`);
+        }
+        showToast(`Đã chuyển toàn bộ ${faceIds.length} ảnh vào nhóm thành công!`, "success");
+        
+        // Remove these faces from tray
+        state.trayFaces = state.trayFaces.filter(f => !faceIds.includes(f.id));
+        updateTrayUI();
+        
+        // Refresh grid
+        fetchClusters(state.sensitivity);
+        
+        // Close modal
+        closeModal();
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    });
+}
+
+// --- Sorting Tray Management ---
+function addFaceToTray(face) {
+    if (state.trayFaces.some(f => f.id === face.id)) {
+        showToast("Khuôn mặt này đã có trong khay sắp xếp.", "info");
+        return;
+    }
+    
+    state.trayFaces.push(face);
+    updateTrayUI();
+    showToast("Đã thêm khuôn mặt vào khay sắp xếp tạm thời.", "success");
+}
+
+function updateTrayUI() {
+    const count = state.trayFaces.length;
+    if (!elements.trayCountBadge) return;
+    
+    elements.trayCountBadge.textContent = count;
+    
+    if (count === 0) {
+        elements.trayEmptyState.classList.remove('hidden');
+        elements.trayFacesList.classList.add('hidden');
+        elements.btnTrayCreateGroup.disabled = true;
+        elements.btnTrayClear.disabled = true;
+        elements.sortTray.classList.add('hidden-tray');
+    } else {
+        elements.trayEmptyState.classList.add('hidden');
+        elements.trayFacesList.classList.remove('hidden');
+        elements.btnTrayCreateGroup.disabled = false;
+        elements.btnTrayClear.disabled = false;
+        elements.sortTray.classList.remove('hidden-tray');
+    }
+    
+    // Render face cards in tray
+    elements.trayFacesList.innerHTML = '';
+    state.trayFaces.forEach(face => {
+        const card = document.createElement('div');
+        card.className = 'tray-face-card';
+        card.draggable = true;
+        card.dataset.faceId = face.id;
+        
+        card.innerHTML = `
+            <img class="tray-face-thumb" src="${face.crop_image}" alt="Tray Face">
+            <button class="btn-tray-remove-face" title="Xoá khỏi khay">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        `;
+        
+        // Remove individual face listener
+        card.querySelector('.btn-tray-remove-face').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeFaceFromTray(face.id);
+        });
+        
+        // Right-click to remove
+        card.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            removeFaceFromTray(face.id);
+            showToast("Đã xóa khỏi khay.", "info");
+        });
+        
+        // Lightbox preview on click
+        card.addEventListener('click', () => {
+            openLightbox(face);
+        });
+        
+        // Drag start for face card inside tray
+        card.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', face.id);
+            e.dataTransfer.setData('source/tray', 'true');
+            card.style.opacity = '0.4';
+            
+            // Highlight target cards in main grid with neon border and hints
+            document.querySelectorAll('.person-card').forEach(c => {
+                c.style.boxShadow = '0 0 15px rgba(16, 185, 129, 0.5)';
+                const hint = document.createElement('div');
+                hint.className = 'person-card-tray-merge-hint';
+                hint.textContent = 'Gộp vào đây';
+                c.appendChild(hint);
+            });
+        });
+        
+        card.addEventListener('dragend', () => {
+            card.style.opacity = '1';
+            document.querySelectorAll('.person-card').forEach(c => {
+                c.style.boxShadow = '';
+                const hint = c.querySelector('.person-card-tray-merge-hint');
+                if (hint) hint.remove();
+            });
+        });
+        
+        elements.trayFacesList.appendChild(card);
+    });
+}
+
+function removeFaceFromTray(faceId) {
+    state.trayFaces = state.trayFaces.filter(f => f.id !== faceId);
+    updateTrayUI();
+}
+
+function clearTray() {
+    state.trayFaces = [];
+    updateTrayUI();
+    showToast("Đã dọn sạch khay sắp xếp.", "info");
+}
+
+// --- Create New Group from Tray ---
+function createGroupFromTray() {
+    if (state.trayFaces.length === 0) return;
+    
+    const newName = prompt(`Nhập tên cho nhóm mới chứa ${state.trayFaces.length} ảnh này:`);
+    if (!newName || !newName.trim()) {
+        if (newName !== null) {
+            showToast("Tên nhóm không được để trống.", "error");
+        }
+        return;
+    }
+    
+    const cleanName = newName.trim();
+    const newClusterId = `custom_group_${Date.now()}`;
+    
+    showToast("Đang tạo nhóm mới...", "info");
+    
+    fetch('/api/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cluster_id: newClusterId, new_name: cleanName })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Tạo nhóm mới thất bại.");
+        return res.json();
+    })
+    .then(() => {
+        const faceIds = state.trayFaces.map(f => f.id);
+        const promises = faceIds.map(faceId => 
+            fetch('/api/move-face', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ face_id: faceId, target_cluster_id: newClusterId })
+            })
+        );
+        return Promise.all(promises);
+    })
+    .then(responses => {
+        const failed = responses.filter(res => !res.ok);
+        if (failed.length > 0) {
+            throw new Error(`Có ${failed.length} ảnh di chuyển thất bại.`);
+        }
+        
+        showToast(`Đã tạo nhóm "${cleanName}" thành công!`, "success");
+        state.trayFaces = [];
+        updateTrayUI();
+        
+        fetchClusters(state.sensitivity);
+        closeModal();
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    });
+}
+
+// --- Create New Group from Single Face (Context Menu) ---
+function createGroupFromSingleFace() {
+    const face = state.contextMenuFace;
+    if (!face) return;
+    
+    const newName = prompt("Nhập tên cho nhóm mới:");
+    if (!newName || !newName.trim()) {
+        if (newName !== null) {
+            showToast("Tên nhóm không được để trống.", "error");
+        }
+        return;
+    }
+    
+    const cleanName = newName.trim();
+    const newClusterId = `custom_group_${Date.now()}`;
+    
+    showToast("Đang tạo nhóm mới...", "info");
+    
+    fetch('/api/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cluster_id: newClusterId, new_name: cleanName })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Tạo nhóm mới thất bại.");
+        return res.json();
+    })
+    .then(() => {
+        return fetch('/api/move-face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ face_id: face.id, target_cluster_id: newClusterId })
+        });
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Di chuyển ảnh thất bại.");
+        
+        showToast(`Đã tạo nhóm "${cleanName}" thành công!`, "success");
+        state.trayFaces = state.trayFaces.filter(f => f.id !== face.id);
+        updateTrayUI();
+        
+        fetchClusters(state.sensitivity);
+        closeModal();
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    });
+}
+
+// --- Context Menu Utilities ---
+function hideFaceContextMenu() {
+    if (elements.faceContextMenu) {
+        elements.faceContextMenu.classList.add('hidden');
+    }
 }
 
 // --- Lightbox / Bounding Box Overlay ---

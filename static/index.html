@@ -73,6 +73,11 @@
                     <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                     Đặt tên từng người
                 </button>
+                <button id="btn-learn" class="btn btn-secondary" style="width: 100%; margin-top: 10px; border-color: rgba(236, 72, 153, 0.45); color: #f9a8d4;">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5v1.4a2 2 0 0 1-.6 1.4L2 11.5V14h20v-2.5l-1.4-1.6a2 2 0 0 1-.6-1.4V7.5A5.5 5.5 0 0 0 14.5 2h-5Z"></path><path d="M8 21h8"></path><path d="M12 17v4"></path></svg>
+                    Giúp AI học (giống Google Photos)
+                </button>
+                <p id="learn-stats-hint" class="input-hint" style="margin-top: 8px;">Chưa có phản hồi học.</p>
             </div>
 
             <div class="sidebar-section disabled-before-scan" id="config-clustering" style="opacity: 0.5; pointer-events: none;">
@@ -300,6 +305,53 @@
         </div>
     </div>
 
+    <!-- AI Learning Modal (Google Photos style) -->
+    <div id="learn-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content glass-card learn-modal-content">
+            <button id="learn-close-btn" class="modal-close-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <div class="modal-header learn-header">
+                <div class="wizard-header-title">
+                    <h2>Hai người này có giống nhau không?</h2>
+                    <span id="learn-progress-text">Câu hỏi 1 / 1</span>
+                </div>
+                <div class="wizard-progress-container">
+                    <div id="learn-progress-bar" class="wizard-progress-bar learn-progress-bar" style="width: 10%;"></div>
+                </div>
+                <p id="learn-similarity-text" class="learn-similarity">Độ giống nhau: —</p>
+            </div>
+            <div class="modal-body learn-body">
+                <div class="learn-compare-grid">
+                    <div class="learn-person-card" id="learn-card-a">
+                        <div class="learn-avatar-wrap">
+                            <img id="learn-avatar-a" src="" alt="Nhóm A">
+                        </div>
+                        <h3 id="learn-name-a">Nhóm A</h3>
+                        <p id="learn-count-a" class="learn-meta">0 ảnh khuôn mặt</p>
+                    </div>
+                    <div class="learn-vs-badge">VS</div>
+                    <div class="learn-person-card" id="learn-card-b">
+                        <div class="learn-avatar-wrap">
+                            <img id="learn-avatar-b" src="" alt="Nhóm B">
+                        </div>
+                        <h3 id="learn-name-b">Nhóm B</h3>
+                        <p id="learn-count-b" class="learn-meta">0 ảnh khuôn mặt</p>
+                    </div>
+                </div>
+                <p class="learn-hint">Phản hồi của bạn giúp AI gộp đúng người và tự tinh chỉnh độ nhạy phân loại cho các lần quét sau.</p>
+            </div>
+            <div class="modal-footer learn-footer">
+                <button id="learn-btn-skip" class="btn btn-secondary">Bỏ qua</button>
+                <div class="learn-footer-actions">
+                    <button id="learn-btn-different" class="btn btn-secondary learn-btn-no">Khác người</button>
+                    <button id="learn-btn-same" class="btn btn-primary learn-btn-yes">Cùng một người</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Naming Wizard Modal -->
     <div id="wizard-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
@@ -374,6 +426,69 @@
 
     <!-- Celebration Canvas for Confetti -->
     <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+    <!-- Face Sorting Tray (Khay Sắp Xếp) -->
+    <div id="sort-tray" class="sort-tray collapsed">
+        <div class="tray-content">
+            <div class="tray-header">
+                <div class="tray-header-left">
+                    <svg class="tray-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="9" y1="3" x2="9" y2="21"></line>
+                        <line x1="15" y1="3" x2="15" y2="21"></line>
+                        <line x1="3" y1="9" x2="21" y2="9"></line>
+                        <line x1="3" y1="15" x2="21" y2="15"></line>
+                    </svg>
+                    <h3>Khay sắp xếp tạm thời</h3>
+                    <span id="tray-count-badge" class="tray-count-badge">0</span>
+                </div>
+                <div class="tray-header-actions">
+                    <button id="btn-tray-create-group" class="btn btn-secondary btn-sm" disabled style="padding: 6px 12px; font-size: 11px; height: 32px; border-radius: 8px;">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+                        Tạo nhóm mới từ khay
+                    </button>
+                    <button id="btn-tray-clear" class="btn btn-secondary btn-sm" disabled style="padding: 6px 12px; font-size: 11px; height: 32px; border-radius: 8px;">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 12px; height: 12px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        Dọn sạch khay
+                    </button>
+                    <button id="btn-tray-toggle" class="btn-tray-toggle" title="Thu nhỏ/Mở rộng">
+                        <svg class="toggle-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="tray-body">
+                <div id="tray-empty-state" class="tray-empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 32px; height: 32px; color: var(--text-dim); margin-bottom: 8px;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                    <p>Khay đang trống. Kéo ảnh từ Modal vào đây hoặc Click chuột phải chọn "Bỏ vào khay" để gom nhóm.</p>
+                </div>
+                <div id="tray-faces-list" class="tray-faces-list hidden">
+                    <!-- Dynamic face cards will be here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Right-Click Context Menu -->
+    <div id="face-context-menu" class="face-context-menu hidden">
+        <ul>
+            <li id="menu-add-to-tray">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                Bỏ vào khay sắp xếp
+            </li>
+            <li id="menu-create-group">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+                Tạo nhóm mới từ ảnh này
+            </li>
+            <li id="menu-view-original">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                Xem ảnh gốc phóng to
+            </li>
+        </ul>
+    </div>
 
     <script src="/static/app.js"></script>
 </body>
