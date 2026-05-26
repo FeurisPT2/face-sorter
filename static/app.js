@@ -534,7 +534,12 @@ function initEvents() {
     if (elements.navBtnDashboard && elements.navBtnHistory) {
         elements.navBtnDashboard.addEventListener('click', () => {
             elements.navBtnDashboard.classList.add('active');
+            elements.navBtnDashboard.style.background = 'rgba(99, 102, 241, 0.15)';
+            elements.navBtnDashboard.style.color = 'var(--accent-indigo)';
+            
             elements.navBtnHistory.classList.remove('active');
+            elements.navBtnHistory.style.background = 'transparent';
+            elements.navBtnHistory.style.color = 'var(--text-muted)';
             
             elements.historyPanel.classList.add('hidden');
             
@@ -543,13 +548,18 @@ function initEvents() {
                 elements.emptyState.classList.add('hidden');
             } else {
                 elements.resultsGridPanel.classList.add('hidden');
-                elements.emptyState.classList.add('hidden');
+                elements.emptyState.classList.remove('hidden');
             }
         });
         
         elements.navBtnHistory.addEventListener('click', () => {
             elements.navBtnHistory.classList.add('active');
+            elements.navBtnHistory.style.background = 'rgba(99, 102, 241, 0.15)';
+            elements.navBtnHistory.style.color = 'var(--accent-indigo)';
+            
             elements.navBtnDashboard.classList.remove('active');
+            elements.navBtnDashboard.style.background = 'transparent';
+            elements.navBtnDashboard.style.color = 'var(--text-muted)';
             
             elements.resultsGridPanel.classList.add('hidden');
             elements.emptyState.classList.add('hidden');
