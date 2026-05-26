@@ -52,6 +52,25 @@
             </div>
 
             <div class="sidebar-section">
+                <h2><svg class="heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>Cấu hình mô hình AI</h2>
+                <div class="input-group" style="margin-bottom: 12px;">
+                    <label for="det-model-select">Mô hình phát hiện (Detection)</label>
+                    <select id="det-model-select" class="select-glass" style="width: 100%; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-glass); border-radius: 12px; padding: 12px 14px; color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 500; outline: none; transition: var(--transition-fast); cursor: pointer;">
+                        <option value="retinaface" style="background: var(--bg-dark);">RetinaFace (Chính xác cao)</option>
+                        <option value="yunet" style="background: var(--bg-dark);">YuNet (Siêu nhanh & Nhẹ)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="rec-model-select">Mô hình nhận diện (Recognition)</label>
+                    <select id="rec-model-select" class="select-glass" style="width: 100%; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-glass); border-radius: 12px; padding: 12px 14px; color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 500; outline: none; transition: var(--transition-fast); cursor: pointer;">
+                        <option value="arcface_r50" style="background: var(--bg-dark);">ArcFace ResNet50 (Mặc định)</option>
+                        <option value="arcface_r100" style="background: var(--bg-dark);">ArcFace ResNet100 (Cực nét)</option>
+                        <option value="sface" style="background: var(--bg-dark);">SFace (Siêu nhanh & Nhẹ)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
                 <h2><svg class="heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>Bộ quét khuôn mặt</h2>
                 <div class="slider-group" style="margin-bottom: 14px;">
                     <div class="slider-labels">
@@ -171,9 +190,15 @@
         <main class="main-content">
             <!-- Header Area -->
             <header class="main-header">
-                <div class="status-badge" id="app-status-badge">
-                    <span class="status-dot"></span>
-                    <span class="status-text" id="app-status-text">Sẵn sàng phân loại</span>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <div class="status-badge" id="app-status-badge" style="margin: 0;">
+                        <span class="status-dot"></span>
+                        <span class="status-text" id="app-status-text">Sẵn sàng phân loại</span>
+                    </div>
+                    <div class="main-nav-tabs" style="display: flex; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glass); border-radius: 14px; padding: 4px;">
+                        <button id="nav-btn-dashboard" class="tab-btn active" style="padding: 6px 14px; border-radius: 10px; font-weight: 700; font-size: 12.5px; border: none; cursor: pointer; transition: all 0.2s; background: rgba(99, 102, 241, 0.15); color: var(--accent-indigo); font-family: inherit;">Bảng điều khiển</button>
+                        <button id="nav-btn-history" class="tab-btn" style="padding: 6px 14px; border-radius: 10px; font-weight: 700; font-size: 12.5px; border: none; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text-muted); font-family: inherit;">Lịch sử hoạt động</button>
+                    </div>
                 </div>
                 <div class="stat-cards">
                     <div class="stat-card">
@@ -278,6 +303,111 @@
                     <!-- Cards will be dynamically injected here -->
                 </div>
             </section>
+
+            <!-- Activity History Panel -->
+            <section id="history-panel" class="results-grid-panel hidden">
+                <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <h2>Lịch sử hoạt động hệ thống</h2>
+                        <p class="panel-subtitle">Theo dõi lịch sử quét ảnh, đổi tên, di chuyển ảnh và phản hồi huấn luyện AI.</p>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <!-- Sub-navigation Tabs -->
+                        <div class="filter-tabs" style="display: flex; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 12px; padding: 4px;">
+                            <button id="history-tab-scans" class="tab-btn active" style="padding: 6px 14px; font-size: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: var(--transition-fast); border: none; font-family: inherit; background: rgba(99, 102, 241, 0.15); color: var(--accent-indigo);">⚙️ Lịch sử quét</button>
+                            <button id="history-tab-others" class="tab-btn" style="padding: 6px 14px; font-size: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: var(--transition-fast); border: none; background: transparent; color: var(--text-muted); font-family: inherit;">📝 Hoạt động khác</button>
+                        </div>
+                        
+                        <button id="btn-clear-history" class="btn btn-secondary" style="border-color: rgba(248, 113, 113, 0.3); color: #fca5a5; padding: 8px 16px; font-size: 13px; border-radius: 12px; display: flex; align-items: center; gap: 6px;">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; margin: 0;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            Xoá lịch sử
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Sub-Panel 1: Lịch sử quét (Metric Cards & Batches Table) -->
+                <div id="history-scans-panel" class="history-sub-panel">
+                    <!-- Metric Cards row -->
+                    <div class="history-metrics-row" style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; margin-top: 14px;">
+                        <!-- Card 1: Tổng lô ảnh -->
+                        <div class="history-metric-card" style="flex: 1; min-width: 240px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-glass); border-radius: 16px; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; position: relative; overflow: hidden; transition: var(--transition-normal);">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <span style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Tổng lô ảnh</span>
+                                <span id="metric-total-batches" style="font-size: 26px; font-weight: 800; color: var(--text-primary); font-family: system-ui, -apple-system, sans-serif;">0</span>
+                            </div>
+                            <div class="metric-icon-bg" style="width: 44px; height: 44px; border-radius: 12px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.18); display: flex; align-items: center; justify-content: center; color: var(--accent-indigo); transition: var(--transition-fast);">
+                                <svg style="width: 20px; height: 20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            </div>
+                            <span style="position: absolute; top: 12px; right: 16px; font-size: 9px; font-weight: 700; color: var(--accent-indigo); background: rgba(99,102,241,0.08); padding: 1px 8px; border-radius: 10px;">DỮ LIỆU</span>
+                        </div>
+
+                        <!-- Card 2: Khuôn mặt đã phát hiện -->
+                        <div class="history-metric-card" style="flex: 1; min-width: 240px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-glass); border-radius: 16px; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; position: relative; overflow: hidden; transition: var(--transition-normal);">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <span style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Khuôn mặt phát hiện</span>
+                                <span id="metric-total-detected-faces" style="font-size: 26px; font-weight: 800; color: var(--text-primary); font-family: system-ui, -apple-system, sans-serif;">0</span>
+                            </div>
+                            <div class="metric-icon-bg" style="width: 44px; height: 44px; border-radius: 12px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.18); display: flex; align-items: center; justify-content: center; color: var(--accent-emerald); transition: var(--transition-fast);">
+                                <svg style="width: 20px; height: 20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                            </div>
+                            <span style="position: absolute; top: 12px; right: 16px; font-size: 9px; font-weight: 700; color: var(--accent-emerald); background: rgba(16,185,129,0.08); padding: 1px 8px; border-radius: 10px;">ĐỘ CHÍNH XÁC</span>
+                        </div>
+
+                        <!-- Card 3: Thời gian xử lý trung bình -->
+                        <div class="history-metric-card" style="flex: 1; min-width: 240px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-glass); border-radius: 16px; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; position: relative; overflow: hidden; transition: var(--transition-normal);">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <span style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Xử lý trung bình</span>
+                                <span id="metric-avg-process-time" style="font-size: 26px; font-weight: 800; color: var(--text-primary); font-family: system-ui, -apple-system, sans-serif;">0.0s</span>
+                            </div>
+                            <div class="metric-icon-bg" style="width: 44px; height: 44px; border-radius: 12px; background: rgba(236, 72, 153, 0.08); border: 1px solid rgba(236, 72, 153, 0.18); display: flex; align-items: center; justify-content: center; color: var(--accent-pink); transition: var(--transition-fast);">
+                                <svg style="width: 20px; height: 20px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            </div>
+                            <span style="position: absolute; top: 12px; right: 16px; font-size: 9px; font-weight: 700; color: var(--accent-pink); background: rgba(236,72,153,0.08); padding: 1px 8px; border-radius: 10px;">ỔN ĐỊNH</span>
+                        </div>
+                    </div>
+
+                    <!-- Scans table -->
+                    <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--border-glass); border-radius: 20px; padding: 20px; overflow-x: auto; min-height: 240px; display: flex; flex-direction: column; justify-content: space-between;">
+                        <table id="history-scans-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13.5px;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.06); color: var(--text-dim); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+                                    <th style="padding: 16px 14px;">Tên lô</th>
+                                    <th style="padding: 16px 14px;">Thời gian quét</th>
+                                    <th style="padding: 16px 14px; text-align: right;">Số ảnh</th>
+                                    <th style="padding: 16px 14px; text-align: right;">Số mặt</th>
+                                    <th style="padding: 16px 14px; text-align: center;">Trạng thái</th>
+                                    <th style="padding: 16px 14px; text-align: center;">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-scans-tbody">
+                                <!-- Scan rows dynamically injected -->
+                            </tbody>
+                        </table>
+                        <div id="history-scans-empty" class="history-empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 20px; text-align: center; flex: 1;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 12px;">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Chưa có lô quét nào được ghi lại.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-Panel 2: Hoạt động khác (Timeline View) -->
+                <div id="history-others-panel" class="history-sub-panel hidden" style="margin-top: 14px; background: rgba(255,255,255,0.01); border: 1px solid var(--border-glass); border-radius: 20px; padding: 24px; min-height: 240px;">
+                    <div id="history-others-empty" class="history-empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 20px; text-align: center;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 12px;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <p style="color: var(--text-muted); font-size: 14px; margin: 0;">Chưa có hoạt động khác nào được ghi lại.</p>
+                    </div>
+                    <div id="history-timeline-list" class="history-timeline-list hidden" style="display: flex; flex-direction: column; gap: 16px; position: relative;">
+                        <!-- History timeline items injected dynamically -->
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -303,7 +433,7 @@
             <div class="modal-body">
                 <div class="drag-hint-banner">
                     <svg class="hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                    <span><strong>Mẹo kéo thả:</strong> Sai sót phân loại? Bạn có thể kéo ảnh khuôn mặt ở dưới thả vào một <strong>thẻ người khác</strong> trên lưới màn hình chính để gộp/chuyển nhóm!</span>
+                    <span><strong>Mẹo chọn nhiều & kéo thả:</strong> Giữ phím <strong>Ctrl / Cmd</strong> và click vào các ảnh ở dưới để chọn nhiều khuôn mặt cùng lúc. Sau đó kéo bất kỳ ảnh nào được chọn hoặc click chuột phải để thao tác hàng loạt!</span>
                 </div>
                 <div class="faces-gallery-title">Tất cả khuôn mặt của người này</div>
                 <div id="modal-faces-gallery" class="faces-gallery">

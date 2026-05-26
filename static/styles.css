@@ -1030,6 +1030,42 @@ input[type="range"]:active::-webkit-slider-thumb {
     position: relative;
 }
 
+.face-thumb-card.selected {
+    border-color: var(--accent-indigo);
+    background: rgba(99, 102, 241, 0.12);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.4), inset 0 0 8px rgba(99, 102, 241, 0.2);
+    transform: translateY(-2px) scale(1.04);
+}
+
+.face-thumb-card.selected .face-thumb {
+    border: 2px solid var(--accent-indigo);
+}
+
+.face-thumb-card.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 20px;
+    height: 20px;
+    background: var(--accent-indigo);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 3;
+    animation: bounce-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes bounce-in {
+    0% { transform: scale(0); }
+    100% { transform: scale(1); }
+}
+
 .warning-badge {
     position: absolute;
     top: 6px;
@@ -1872,5 +1908,211 @@ input[type="range"]:active::-webkit-slider-thumb {
     0% { transform: scale(1); opacity: 0.9; }
     50% { transform: scale(1.02); opacity: 1; }
     100% { transform: scale(1); opacity: 0.9; }
+}
+
+/* Activity History Timeline styles */
+.history-timeline-list {
+    position: relative;
+    padding-left: 20px;
+}
+
+.history-timeline-list::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 28px;
+    width: 2px;
+    background: var(--border-glass);
+}
+
+.timeline-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-glass);
+    border-radius: 16px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+    transition: var(--transition-normal);
+    position: relative;
+}
+
+.timeline-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateX(4px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.timeline-item-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    z-index: 2;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.timeline-item-icon svg {
+    width: 18px;
+    height: 18px;
+    color: white;
+}
+
+/* Timeline Type colors */
+.timeline-item.scan {
+    border-left: 4px solid var(--accent-emerald);
+}
+.timeline-item.scan .timeline-item-icon {
+    background: linear-gradient(135deg, #10b981, #059669);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.timeline-item.rename {
+    border-left: 4px solid var(--accent-indigo);
+}
+.timeline-item.rename .timeline-item-icon {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+
+.timeline-item.move {
+    border-left: 4px solid #3b82f6;
+}
+.timeline-item.move .timeline-item-icon {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.timeline-item.merge {
+    border-left: 4px solid #f59e0b;
+}
+.timeline-item.merge .timeline-item-icon {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.timeline-item.learn {
+    border-left: 4px solid var(--accent-pink);
+}
+.timeline-item.learn .timeline-item-icon {
+    background: linear-gradient(135deg, #ec4899, #db2777);
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+}
+
+.timeline-item-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.timeline-item-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.timeline-item-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.timeline-item-time {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-dim);
+    font-family: monospace;
+    flex-shrink: 0;
+}
+
+/* Nav Tabs active style */
+.main-nav-tabs .tab-btn {
+    font-family: inherit;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.main-nav-tabs .tab-btn.active {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: var(--accent-indigo) !important;
+}
+
+.main-nav-tabs .tab-btn:not(.active):hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+/* History Metrics Cards Custom Styles */
+.history-metric-card:hover {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.history-metric-card:hover .metric-icon-bg {
+    transform: scale(1.05);
+}
+
+/* Premium Status Pill Badges */
+.status-pill {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+}
+
+.status-pill.success {
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--accent-emerald);
+    border-color: rgba(16, 185, 129, 0.18);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+}
+
+.status-pill.processing {
+    background: rgba(99, 102, 241, 0.08);
+    color: var(--accent-indigo);
+    border-color: rgba(99, 102, 241, 0.18);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.1);
+}
+
+.status-pill.failed {
+    background: rgba(239, 68, 68, 0.08);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.18);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+}
+
+/* Glass table row lines & transitions */
+#history-scans-table tbody tr {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: var(--transition-fast);
+}
+
+#history-scans-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+#history-scans-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+/* History Sub Panels Hidden state */
+.history-sub-panel.hidden {
+    display: none !important;
 }
 

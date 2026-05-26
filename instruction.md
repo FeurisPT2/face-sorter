@@ -17,15 +17,19 @@ Ngôn ngữ UI: **tiếng Việt**. Code comment/doc: hỗn hợp Vi/En.
 
 ---
 
-## 2. Cảnh báo quan trọng — README vs code thực tế
+## 2. Cấu hình ML và Mô hình hoạt động thực tế
 
-| Tài liệu | Ghi | Thực tế trong code |
-|----------|-----|-------------------|
-| `README.md`, `README_VI.md`, `PROJECT_DETAILS.md` | YuNet + SFace (128-D), OpenCV DNN | **RetinaFace MobileNet 0.25** + **ArcFace ResNet50** (`w600k_r50.onnx`), **ONNX Runtime** |
-| `app.py` message khi tải model | "YuNet & SFace" | Nên sửa thành RetinaFace & ArcFace khi đụng UI/backend message |
-| `core/clusterer.py` docstring cũ | "128-d SFace" | Embedding **512-D** ArcFace |
+Hệ thống hỗ trợ cấu hình động (Dynamic Model Selection) trực tiếp từ giao diện Sidebar trước khi quét ảnh:
 
-**Luôn đọc `core/face_processor.py` và `core/clusterer.py` làm nguồn sự thật về ML.**
+- **Phát hiện khuôn mặt (Detection)**:
+  - `retinaface`: RetinaFace MobileNet 0.25 (chạy qua ONNX Runtime, chính xác tối ưu).
+  - `yunet`: OpenCV YuNet (chạy qua OpenCV `cv2.FaceDetectorYN`, siêu nhanh và nhẹ).
+- **Trích xuất đặc trưng & Nhận diện (Recognition)**:
+  - `arcface_r50`: ArcFace ResNet50 (`w600k_r50.onnx` qua ONNX Runtime, vector 512-D, mặc định).
+  - `arcface_r100`: ArcFace ResNet100 (`arcfaceresnet100-11-int8.onnx` qua ONNX Runtime, vector 512-D, chính xác cao nhất).
+  - `sface`: OpenCV SFace (`face_recognition_sface_2021dec.onnx` qua OpenCV `cv2.FaceRecognizerSF`, vector 128-D, siêu nhanh).
+
+*Lưu ý:* Trình gom cụm `core/clusterer.py` hoạt động tốt với cả vector đặc trưng 128-D của SFace và 512-D của ArcFace nhờ DBSCAN cosine metric. Dữ liệu lịch sử quét lưu chi tiết cấu hình mô hình sử dụng cho từng phiên quét.
 
 ---
 
@@ -56,6 +60,7 @@ python test_pipeline.py
 |------|----------|
 | `cache/` | Crop khuôn mặt 112×112 phục vụ UI (`/static/cache/...`) |
 | `data/face_learning.json` | Phản hồi học (must-link, cannot-link, eps_offset, prototypes) |
+| `data/history.json` | Dữ liệu lịch sử hoạt động hệ thống (scans, renames, moves, merges, learn) |
 | `output/` | Thư mục xuất mặc định gợi ý |
 | `sample_photos/` | Ảnh mẫu tải từ Wikipedia |
 | `models/` | ONNX weights (tự tải lần đầu) |
@@ -77,12 +82,14 @@ flowchart TB
         Cluster[/api/cluster]
         Learn[/api/learn/*]
         Export[/api/export]
+        History[/api/history]
     end
 
     subgraph Core["core/"]
         FP[face_processor.py\nRetinaFace + ArcFace]
         CL[clusterer.py\nDBSCAN + auto-tune]
         FL[face_learning.py\npersistent feedback]
+        HS[history.py\nActivity history logging]
         EX[exporter.py]
     end
 
@@ -90,11 +97,15 @@ flowchart TB
     JS --> API
     Scan --> FP
     Scan --> CL
+    Scan --> HS
     Cluster --> CL
     Learn --> FL
     Learn --> CL
+    Learn --> HS
     Export --> EX
+    History --> HS
     FL --> data[(data/face_learning.json)]
+    HS --> history_data[(data/history.json)]
     FP --> models[(models/*.onnx)]
     FP --> cache[(cache/)]
 ```
@@ -114,6 +125,7 @@ yearbook-face-sorter/
 │   ├── face_processor.py  # Detection, alignment, 512-D embeddings
 │   ├── clusterer.py       # DBSCAN, FCQS v2 auto-tune eps
 │   ├── face_learning.py   # Google Photos–style learning store
+│   ├── history.py         # persistent activity history database manager
 │   └── exporter.py        # Copy ảnh gốc ra cấu trúc thư mục
 ├── static/
 │   ├── index.html
@@ -222,7 +234,7 @@ Toàn bộ state **in-memory** (mất khi restart server, trừ `data/face_learn
 | Method | Path | Mô tả |
 |--------|------|--------|
 | `GET` | `/` | `index.html` |
-| `POST` | `/api/scan` | `{ source_dir, workers }` — quét nền |
+| `POST` | `/api/scan` | `{ source_dir, workers, detection_model, recognition_model }` — quét nền |
 | `GET` | `/api/scan-status` | Trạng thái + `optimal_sensitivity` khi done |
 | `POST` | `/api/scan/pause` \| `/resume` \| `/stop` | Điều khiển quét |
 | `GET` | `/api/cluster?eps=` | Chạy lại cluster; bỏ `eps` → dùng `current_cluster_eps` |
@@ -233,6 +245,9 @@ Toàn bộ state **in-memory** (mất khi restart server, trừ `data/face_learn
 | `GET` | `/api/learn/suggestions` | Cặp nhóm cần hỏi |
 | `GET` | `/api/learn/stats` | Thống kê học |
 | `POST` | `/api/learn/feedback` | Phản hồi học |
+| `GET` | `/api/history` | Lấy lịch sử hoạt động hệ thống từ `data/history.json` |
+| `POST` | `/api/history/clear` | Xoá toàn bộ lịch sử hoạt động hệ thống |
+| `POST` | `/api/history/delete/{event_id}` | Xoá sự kiện lịch sử cụ thể theo ID |
 | `POST` | `/api/export` | Xuất thư mục |
 | `POST` | `/api/create-samples` | Tải ảnh mẫu Wikipedia |
 | `POST` | `/api/reset` | Xóa session |
@@ -298,7 +313,7 @@ Toàn bộ state **in-memory** (mất khi restart server, trừ `data/face_learn
 
 ### Việc thường được yêu cầu tiếp theo
 
-- [ ] Đồng bộ README/PROJECT_DETAILS với RetinaFace + ArcFace
+- [x] Đồng bộ README/instruction.md với hệ thống đa mô hình (RetinaFace, YuNet, ArcFace R50, ArcFace R100, SFace) và Lịch sử hệ thống
 - [ ] Persist `person_names` / session theo `source_dir` (SQLite hoặc JSON)
 - [ ] Gợi ý tên từ `person_prototypes` hiển thị trên card nhóm
 - [ ] GPU EP cho ONNX (`CUDAExecutionProvider`)

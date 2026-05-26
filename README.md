@@ -14,9 +14,20 @@
 ## ✨ Features
 
 ### 🧠 1. State-of-the-Art Face Recognition AI
-- **Face Detection**: Powered by **YuNet**, a high-performance deep-learning-based detector integrated directly through OpenCV, enabling lightning-fast and highly accurate face localization across varying lighting conditions and facial angles.
-- **Feature Extraction & Identification**: Employs OpenCV's **SFace** model to extract dense, 128-dimensional deep face embeddings.
+- **Face Detection (Detection)**:
+  - **RetinaFace (High Accuracy)**: Powered by ONNX Runtime, offering outstanding precision and robust detection in tricky angles and difficult lighting conditions.
+  - **YuNet (Super Fast & Light)**: Built-in OpenCV wrapper, highly efficient and lightweight for quick scans.
+- **Feature Extraction & Identification (Recognition)**:
+  - **ArcFace ResNet50 (Balanced)**: 512-dimensional deep embedding representation with excellent balance between speed and precision.
+  - **ArcFace ResNet100 (Maximum Precision)**: A heavier 512-D deep architecture offering premium, state-of-the-art accuracy.
+  - **SFace (Super Fast & Light)**: 128-dimensional OpenCV model, optimized for low memory usage and lightning-fast comparisons.
 - **Automatic Clustering**: Powered by the **DBSCAN** density-based algorithm, which automatically groups highly similar faces into distinct clusters (individuals) without requiring you to pre-define the number of people.
+
+### 📜 2. System Activity History Timeline
+- **Operations Log**: Keeps track of scan parameters, group renames, drag-and-drop face movements, merges, and machine learning feedback.
+- **Persistence**: Automatically saved to a local database (`data/history.json`).
+- **Timelined Feed**: Beautifully structured UI timeline feed showing styled event entries with full action details, color highlights, and timestamps.
+- **Dynamic Control**: Clear the system history safely directly from the dashboard controls.
 
 ### 🪄 2. Interactive Naming Wizard
 *A highly optimized step-by-step workflow designed for fast and intuitive human-in-the-loop naming.*

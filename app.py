@@ -18,6 +18,7 @@ from core.face_processor import FaceProcessor, _init_worker, _process_single_ima
 from core.clusterer import FaceClusterer, DEFAULT_EPS
 from core.exporter import FaceExporter
 from core.face_learning import FaceLearningStore
+from core.history import HistoryStore
 
 app = FastAPI(title="Yearbook Face Sorter API")
 
@@ -30,6 +31,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR = BASE_DIR / "models"
 DATA_DIR = BASE_DIR / "data"
 LEARNING_STORE = FaceLearningStore(DATA_DIR / "face_learning.json")
+HISTORY_STORE = HistoryStore(DATA_DIR / "history.json")
 
 # Mount cache for cropped images
 app.mount("/static/cache", StaticFiles(directory=str(CACHE_DIR)), name="cache")
@@ -58,6 +60,8 @@ scan_stop_event = threading.Event()
 class ScanRequest(BaseModel):
     source_dir: str
     workers: int = 4
+    detection_model: Optional[str] = "retinaface"
+    recognition_model: Optional[str] = "arcface_r50"
 
 class RenameRequest(BaseModel):
     cluster_id: str
@@ -88,9 +92,16 @@ class ExportRequest(BaseModel):
 # Thread lock for safe scan_state updates from background thread
 _scan_lock = threading.Lock()
 
-def run_background_scan(source_path: Path, num_workers: int = 4):
-    global scan_state, scan_results, clustered_groups, person_names, custom_assignments, current_cluster_eps
+def run_background_scan(source_path: Path, num_workers: int = 4, detection_model: str = "retinaface", recognition_model: str = "arcface_r50"):
+    global scan_state, scan_results, clustered_groups, person_names, custom_assignments, current_cluster_eps, processor
     try:
+        # Instantiate/configure the local processor with selected models
+        processor = FaceProcessor(
+            models_dir=MODELS_DIR,
+            detection_model=detection_model,
+            recognition_model=recognition_model
+        )
+        
         # 1. Reset states
         scan_state["status"] = "scanning"
         scan_state["total_files"] = 0
@@ -175,7 +186,7 @@ def run_background_scan(source_path: Path, num_workers: int = 4):
             with ProcessPoolExecutor(
                 max_workers=max_workers,
                 initializer=_init_worker,
-                initargs=(models_dir_str,)
+                initargs=(models_dir_str, detection_model, recognition_model)
             ) as executor:
                 # Submit up to max_workers * 2 tasks initially to avoid overfilling worker queues
                 pending_futures = {}
@@ -250,6 +261,14 @@ def run_background_scan(source_path: Path, num_workers: int = 4):
         scan_state["optimal_eps"] = round(current_cluster_eps, 3)
         scan_state["optimal_sensitivity"] = round(1.0 - current_cluster_eps, 2)
         run_clustering(eps=current_cluster_eps)
+        
+        HISTORY_STORE.add_event("scan", {
+            "source_dir": str(source_path),
+            "files_count": total,
+            "faces_found": len(scan_results),
+            "det_model": detection_model,
+            "rec_model": recognition_model
+        })
         
     except Exception as e:
         scan_state["status"] = "error"
@@ -385,7 +404,13 @@ def scan_directory(request: ScanRequest, background_tasks: BackgroundTasks):
     scan_stop_event.clear()
     
     # Start scanning in background
-    background_tasks.add_task(run_background_scan, source_path, request.workers)
+    background_tasks.add_task(
+        run_background_scan, 
+        source_path, 
+        request.workers, 
+        request.detection_model, 
+        request.recognition_model
+    )
     return {"status": "started", "message": f"Bắt đầu quét ảnh với {request.workers} luồng xử lý song song."}
 
 @app.post("/api/scan/pause")
@@ -459,6 +484,7 @@ def rename_person(request: RenameRequest):
     if not new_name:
         raise HTTPException(status_code=400, detail="Tên không được để trống.")
         
+    old_name = person_names.get(cluster_id) or (clustered_groups[cluster_id].get("person_name") if cluster_id in clustered_groups else "")
     person_names[cluster_id] = new_name
 
     if cluster_id in clustered_groups:
@@ -469,6 +495,12 @@ def rename_person(request: RenameRequest):
                 break
     
     run_clustering()
+    
+    HISTORY_STORE.add_event("rename", {
+        "cluster_id": cluster_id,
+        "old_name": old_name,
+        "new_name": new_name
+    })
             
     return {"status": "success", "message": f"Đã đổi tên nhóm thành '{new_name}'"}
 
@@ -528,6 +560,18 @@ def learn_feedback(request: LearnFeedbackRequest):
         skipped=request.skipped,
     )
 
+    name_a = person_names.get(request.cluster_a) or (clustered_groups[request.cluster_a].get("person_name") if request.cluster_a in clustered_groups else "")
+    name_b = person_names.get(request.cluster_b) or (clustered_groups[request.cluster_b].get("person_name") if request.cluster_b in clustered_groups else "")
+    HISTORY_STORE.add_event("learn", {
+        "cluster_a": request.cluster_a,
+        "cluster_b": request.cluster_b,
+        "name_a": name_a,
+        "name_b": name_b,
+        "same": request.same,
+        "skipped": request.skipped,
+        "similarity": sim
+    })
+
     merged = False
     stale = not (a_exists and b_exists)
 
@@ -582,8 +626,18 @@ def learn_reset_all():
 
 @app.post("/api/merge-clusters")
 def api_merge_clusters(request: MergeClustersRequest):
+    src_name = person_names.get(request.source_cluster_id) or (clustered_groups[request.source_cluster_id].get("person_name") if request.source_cluster_id in clustered_groups else "")
+    tgt_name = person_names.get(request.target_cluster_id) or (clustered_groups[request.target_cluster_id].get("person_name") if request.target_cluster_id in clustered_groups else "")
+    
     merge_clusters(request.source_cluster_id, request.target_cluster_id)
     run_clustering()
+    
+    HISTORY_STORE.add_event("merge", {
+        "source_cluster_id": request.source_cluster_id,
+        "target_cluster_id": request.target_cluster_id,
+        "source_name": src_name,
+        "target_name": tgt_name
+    })
     return {
         "status": "success",
         "groups": list(clustered_groups.values()),
@@ -603,6 +657,13 @@ def move_face_to_group(request: MoveRequest):
     # The frontend will fetch current clusters with `/api/cluster?eps=...` subsequently,
     # but we trigger a default re-cluster here to update internal dictionary
     run_clustering()
+    
+    target_name = person_names.get(target_cluster_id) or (clustered_groups[target_cluster_id].get("person_name") if target_cluster_id in clustered_groups else "")
+    HISTORY_STORE.add_event("move", {
+        "face_id": face_id,
+        "target_cluster_id": target_cluster_id,
+        "target_name": target_name
+    })
     
     return {"status": "success", "message": "Đã chuyển khuôn mặt sang nhóm mới."}
 
@@ -826,6 +887,22 @@ def get_original_photo(path: str):
     if not photo_path.exists():
         raise HTTPException(status_code=404, detail="Ảnh gốc không tồn tại.")
     return FileResponse(str(photo_path))
+
+@app.get("/api/history")
+def get_history():
+    return HISTORY_STORE.get_all_events()
+
+@app.post("/api/history/clear")
+def clear_history():
+    HISTORY_STORE.clear_history()
+    return {"status": "success", "message": "Đã xoá toàn bộ lịch sử hoạt động."}
+
+@app.post("/api/history/delete/{event_id}")
+def delete_history_event(event_id: int):
+    success = HISTORY_STORE.delete_event(event_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện lịch sử.")
+    return {"status": "success", "message": "Đã xoá sự kiện lịch sử thành công."}
 
 # Serve HTML/JS/CSS assets
 @app.get("/")

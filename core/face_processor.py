@@ -14,10 +14,10 @@ from itertools import product
 # This avoids re-loading RetinaFace + ArcFace models for every single image.
 _worker_processor = None
 
-def _init_worker(models_dir_str):
+def _init_worker(models_dir_str, det_model="retinaface", rec_model="arcface_r50"):
     """Called once when a worker process starts. Loads models into process-local global."""
     global _worker_processor
-    _worker_processor = FaceProcessor(models_dir=models_dir_str)
+    _worker_processor = FaceProcessor(models_dir=models_dir_str, detection_model=det_model, recognition_model=rec_model)
     _worker_processor.load_models()
 
 def _process_single_image(args):
@@ -62,7 +62,7 @@ class FaceProcessor:
         [62.7299, 92.2041]   # right mouth corner
     ], dtype=np.float32)
     
-    def __init__(self, models_dir=None):
+    def __init__(self, models_dir=None, detection_model="retinaface", recognition_model="arcface_r50"):
         if models_dir is None:
             # Default models dir in the project
             models_dir = Path(__file__).parent.parent / "models"
@@ -70,14 +70,39 @@ class FaceProcessor:
         self.models_dir = Path(models_dir)
         self.models_dir.mkdir(parents=True, exist_ok=True)
         
-        self.retinaface_path = self.models_dir / "retinaface_mv1_0.25.onnx"
-        self.arcface_path = self.models_dir / "w600k_r50.onnx"
+        self.detection_model = detection_model
+        self.recognition_model = recognition_model
+        
+        # Setup paths based on selected models
+        if detection_model == "yunet":
+            self.detector_path = self.models_dir / "face_detection_yunet_2023mar.onnx"
+            self.detector_url = "https://github.com/opencv/opencv_zoo/raw/master/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+            self.detector_name = "YuNet (Phát hiện khuôn mặt)"
+        else:
+            self.detector_path = self.models_dir / "retinaface_mv1_0.25.onnx"
+            self.detector_url = self.RETINAFACE_URL
+            self.detector_name = "RetinaFace (Phát hiện khuôn mặt)"
+            
+        if recognition_model == "arcface_r100":
+            self.recognizer_path = self.models_dir / "arcfaceresnet100-11-int8.onnx"
+            self.recognizer_url = "https://huggingface.co/yolkailtd/face-swap-models/resolve/main/insightface/models/buffalo_l/arcfaceresnet100-11-int8.onnx"
+            self.recognizer_name = "ArcFace ResNet100 (Nhận diện khuôn mặt)"
+        elif recognition_model == "sface":
+            self.recognizer_path = self.models_dir / "face_recognition_sface_2021dec.onnx"
+            self.recognizer_url = "https://github.com/opencv/opencv_zoo/raw/master/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+            self.recognizer_name = "SFace (Nhận diện khuôn mặt)"
+        else:
+            self.recognizer_path = self.models_dir / "w600k_r50.onnx"
+            self.recognizer_url = self.ARCFACE_URL
+            self.recognizer_name = "ArcFace ResNet50 (Nhận diện khuôn mặt)"
         
         self.detector_session = None
         self.recognizer_session = None
+        self.detector = None
+        self.recognizer = None
 
     def ensure_models(self, progress_callback=None):
-        """Ensures both RetinaFace and ArcFace model files are downloaded locally."""
+        """Ensures both selected face detection and recognition model files are downloaded locally."""
         def download_with_progress(url, dest_path, model_name):
             if dest_path.exists():
                 # Check if it's not a tiny file (pointer)
@@ -107,11 +132,11 @@ class FaceProcessor:
             if dest_path.stat().st_size < 1000000:
                 raise Exception(f"Tải mô hình {model_name} thất bại hoặc tệp tin bị hỏng (kích thước quá nhỏ).")
 
-        download_with_progress(self.RETINAFACE_URL, self.retinaface_path, "RetinaFace (Phát hiện khuôn mặt)")
-        download_with_progress(self.ARCFACE_URL, self.arcface_path, "ArcFace INT8 (Nhận diện khuôn mặt)")
+        download_with_progress(self.detector_url, self.detector_path, self.detector_name)
+        download_with_progress(self.recognizer_url, self.recognizer_path, self.recognizer_name)
 
     def load_models(self):
-        """Initializes ONNX Runtime sessions for RetinaFace and ArcFace."""
+        """Initializes ONNX Runtime sessions or OpenCV structures for selected models."""
         self.ensure_models()
         
         # Configure CPU thread counts optimized for parallel/multi-processing execution
@@ -120,48 +145,62 @@ class FaceProcessor:
         opts.inter_op_num_threads = 1
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         
-        # Initialize detector session
-        self.detector_session = ort.InferenceSession(
-            str(self.retinaface_path),
-            sess_options=opts,
-            providers=['CPUExecutionProvider']
-        )
+        # Initialize detector session or OpenCV structure
+        if self.detection_model == "yunet":
+            self.detector = cv2.FaceDetectorYN.create(
+                str(self.detector_path),
+                "",
+                (112, 112),
+                scoreThreshold=0.6,
+                nmsThreshold=0.3
+            )
+        else:
+            self.detector_session = ort.InferenceSession(
+                str(self.detector_path),
+                sess_options=opts,
+                providers=['CPUExecutionProvider']
+            )
+            
+            # Query and map input/output names dynamically to be bulletproof against ONNX changes
+            self.det_input_name = self.detector_session.get_inputs()[0].name
+            self.det_output_names = [o.name for o in self.detector_session.get_outputs()]
+            
+            # Resolve output names by analyzing their static output dimension signatures
+            self.det_loc_name = None
+            self.det_conf_name = None
+            self.det_landms_name = None
+            
+            for out in self.detector_session.get_outputs():
+                shape = out.shape
+                if len(shape) == 3:
+                    last_dim = shape[2]
+                    if last_dim == 4:
+                        self.det_loc_name = out.name
+                    elif last_dim == 2:
+                        self.det_conf_name = out.name
+                    elif last_dim == 10:
+                        self.det_landms_name = out.name
+            
+            # Fallback to index-based ordering if dynamic detection finds anomalies
+            if not (self.det_loc_name and self.det_conf_name and self.det_landms_name):
+                self.det_loc_name = self.det_output_names[0]
+                self.det_conf_name = self.det_output_names[1]
+                self.det_landms_name = self.det_output_names[2]
         
-        # Initialize recognizer session
-        self.recognizer_session = ort.InferenceSession(
-            str(self.arcface_path),
-            sess_options=opts,
-            providers=['CPUExecutionProvider']
-        )
-        
-        # Query and map input/output names dynamically to be bulletproof against ONNX changes
-        self.det_input_name = self.detector_session.get_inputs()[0].name
-        self.det_output_names = [o.name for o in self.detector_session.get_outputs()]
-        
-        self.rec_input_name = self.recognizer_session.get_inputs()[0].name
-        self.rec_output_name = self.recognizer_session.get_outputs()[0].name
-        
-        # Resolve output names by analyzing their static output dimension signatures
-        self.det_loc_name = None
-        self.det_conf_name = None
-        self.det_landms_name = None
-        
-        for out in self.detector_session.get_outputs():
-            shape = out.shape
-            if len(shape) == 3:
-                last_dim = shape[2]
-                if last_dim == 4:
-                    self.det_loc_name = out.name
-                elif last_dim == 2:
-                    self.det_conf_name = out.name
-                elif last_dim == 10:
-                    self.det_landms_name = out.name
-        
-        # Fallback to index-based ordering if dynamic detection finds anomalies
-        if not (self.det_loc_name and self.det_conf_name and self.det_landms_name):
-            self.det_loc_name = self.det_output_names[0]
-            self.det_conf_name = self.det_output_names[1]
-            self.det_landms_name = self.det_output_names[2]
+        # Initialize recognizer session or OpenCV structure
+        if self.recognition_model == "sface":
+            self.recognizer = cv2.FaceRecognizerSF.create(
+                str(self.recognizer_path),
+                ""
+            )
+        else:
+            self.recognizer_session = ort.InferenceSession(
+                str(self.recognizer_path),
+                sess_options=opts,
+                providers=['CPUExecutionProvider']
+            )
+            self.rec_input_name = self.recognizer_session.get_inputs()[0].name
+            self.rec_output_name = self.recognizer_session.get_outputs()[0].name
 
     def _generate_priors(self, image_size):
         """
@@ -244,7 +283,7 @@ class FaceProcessor:
 
     def _detect_faces_at_scale(self, img, max_dim):
         """
-        Detect faces in image at a specific max dimension scale using RetinaFace.
+        Detect faces in image at a specific max dimension scale using RetinaFace or YuNet.
         Returns a list of 15-element arrays compatible with OpenCV YN format.
         """
         h, w = img.shape[:2]
@@ -259,7 +298,20 @@ class FaceProcessor:
             
         dh, dw = img_detect.shape[:2]
         
-        # Preprocessing: BGR mean subtraction, channel transpose, batch expand
+        if self.detection_model == "yunet":
+            self.detector.setInputSize((dw, dh))
+            _, faces = self.detector.detect(img_detect)
+            
+            result_faces = []
+            if faces is not None:
+                for face in faces:
+                    face_arr = face.copy()
+                    face_arr[0:4] = face_arr[0:4] / scale
+                    face_arr[4:14] = face_arr[4:14] / scale
+                    result_faces.append(face_arr)
+            return result_faces
+        
+        # Preprocessing: BGR mean subtraction, channel transpose, batch expand for RetinaFace ONNX
         img_input = img_detect.astype(np.float32)
         img_input -= np.array([104.0, 117.0, 123.0], dtype=np.float32)
         img_input = img_input.transpose(2, 0, 1)  # (H, W, C) -> (C, H, W)
@@ -424,9 +476,17 @@ class FaceProcessor:
 
     def extract_embedding(self, aligned_face):
         """
-        Extracts 512-d feature representation from aligned face (112x112) using ArcFace FP32.
+        Extracts 512-d or 128-d feature representation from aligned face (112x112).
         Returns L2-normalized embedding vector.
         """
+        if self.recognition_model == "sface":
+            feature = self.recognizer.feature(aligned_face)
+            feature_vector = feature[0]
+            norm = np.linalg.norm(feature_vector)
+            if norm > 0:
+                feature_vector = feature_vector / norm
+            return feature_vector.tolist()
+            
         # Preprocessing: Convert BGR (OpenCV format) to RGB, and scale to [-1, 1] range
         rgb_face = cv2.cvtColor(aligned_face, cv2.COLOR_BGR2RGB)
         img_input = rgb_face.astype(np.float32)
@@ -456,7 +516,8 @@ class FaceProcessor:
         ArcFace INT8 512-dimensional embeddings.
         Returns a list of dictionaries with face metadata.
         """
-        if self.detector_session is None or self.recognizer_session is None:
+        if (self.detector_session is None and self.detector is None) or \
+           (self.recognizer_session is None and self.recognizer is None):
             self.load_models()
             
         img_path = Path(img_path)

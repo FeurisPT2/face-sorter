@@ -9,9 +9,20 @@
 ## ✨ Các tính năng nổi bật
 
 ### 🧠 1. Công nghệ AI Nhận Diện Khuôn Mặt Tối Tân
-- **Phát hiện khuôn mặt (Face Detection)**: Sử dụng mô hình học sâu siêu tốc **YuNet** tích hợp trực tiếp qua bộ thư viện OpenCV nâng cao, cho khả năng phát hiện khuôn mặt cực kỳ chính xác ở nhiều góc độ và điều kiện ánh sáng.
-- **Trích xuất đặc trưng & Nhận dạng (Face Recognition)**: Sử dụng mô hình **SFace** của OpenCV để trích xuất vector đặc trưng (embeddings) 128 chiều có độ chính xác cao.
+- **Phát hiện khuôn mặt (Face Detection)**:
+  - **RetinaFace (Chính xác cao)**: Chạy qua ONNX Runtime, mang lại độ chính xác cực cao, nhận dạng tốt ở các góc nghiêng khó và điều kiện ánh sáng phức tạp.
+  - **YuNet (Siêu nhanh & Nhẹ)**: Được gói gọn trực tiếp qua OpenCV, xử lý nhanh chóng với tài nguyên phần cứng cực nhẹ.
+- **Trích xuất đặc trưng & Nhận dạng (Face Recognition)**:
+  - **ArcFace ResNet50 (Cân bằng)**: Vector đặc trưng 512 chiều hiệu suất cao, cân bằng hoàn hảo giữa tốc độ xử lý và độ chính xác.
+  - **ArcFace ResNet100 (Chính xác tối đa)**: Mô hình mạng ResNet100 nặng 512 chiều cho khả năng phân biệt nhận diện đỉnh cao.
+  - **SFace (Siêu nhanh & Nhẹ)**: Mô hình của OpenCV tạo embeddings 128 chiều, tối ưu cho máy cấu hình yếu và tốc độ so khớp chớp nhoáng.
 - **Tự động gom nhóm (Clustering)**: Thuật toán gom nhóm mật độ **DBSCAN** tự động gom các khuôn mặt có độ tương đồng cao vào cùng một nhóm (một người) mà không cần khai báo số lượng người trước.
+
+### 📜 2. Trang hiển thị Lịch sử Hoạt động Hệ thống
+- **Ghi nhật ký chi tiết**: Ghi lại lịch sử thông số các lần quét ảnh, thao tác đổi tên người dùng, di chuyển khuôn mặt kéo thả, gộp nhóm và phản hồi AI học máy.
+- **Lưu trữ dữ liệu**: Tự động đồng bộ và lưu trữ cục bộ dưới tệp cơ sở dữ liệu `data/history.json`.
+- **Dòng thời gian timeline sinh động**: Giao diện timeline kính mờ tuyệt đẹp hiển thị chi tiết nội dung sự kiện, ảnh thẻ trực quan, mã màu nổi bật cho từng loại hành động và mốc thời gian rõ ràng.
+- **Điều khiển trực quan**: Cho phép dọn dẹp xoá lịch sử an toàn chỉ với một cú click từ bảng điều khiển.
 
 ### 🪄 2. Trình đặt tên từng người tuần tự (Interactive Naming Wizard)
 *Đây là tính năng độc quyền giúp tối ưu hoá tối đa trải nghiệm đặt tên thành viên sau phân loại.*

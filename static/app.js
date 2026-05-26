@@ -19,7 +19,8 @@ const state = {
     activeFilter: "all", // "all", "warnings"
     sortByOption: "size_desc", // "size_desc", "size_asc", "name_asc", "warnings_desc"
     trayFaces: [], // Faces in the bottom sorting tray
-    contextMenuFace: null // Face currently targeted by the custom context menu
+    contextMenuFace: null, // Face currently targeted by the custom context menu
+    selectedFaceIds: [] // Face IDs currently selected in multi-select mode
 };
 
 // DOM Elements
@@ -142,7 +143,29 @@ const elements = {
     
     // Confetti
     confettiCanvas: document.getElementById('confetti-canvas'),
-    toastContainer: document.getElementById('toast-container')
+    toastContainer: document.getElementById('toast-container'),
+
+    // Model Selection & History Panel Elements
+    detModelSelect: document.getElementById('det-model-select'),
+    recModelSelect: document.getElementById('rec-model-select'),
+    historyPanel: document.getElementById('history-panel'),
+    historyTimelineList: document.getElementById('history-timeline-list'),
+    historyEmptyState: document.getElementById('history-empty-state'),
+    btnClearHistory: document.getElementById('btn-clear-history'),
+    navBtnDashboard: document.getElementById('nav-btn-dashboard'),
+    navBtnHistory: document.getElementById('nav-btn-history'),
+
+    // History Sub-Tabs & Panels
+    historyTabScans: document.getElementById('history-tab-scans'),
+    historyTabOthers: document.getElementById('history-tab-others'),
+    historyScansPanel: document.getElementById('history-scans-panel'),
+    historyOthersPanel: document.getElementById('history-others-panel'),
+    historyScansTbody: document.getElementById('history-scans-tbody'),
+    historyScansEmpty: document.getElementById('history-scans-empty'),
+    historyOthersEmpty: document.getElementById('history-others-empty'),
+    metricTotalBatches: document.getElementById('metric-total-batches'),
+    metricTotalDetectedFaces: document.getElementById('metric-total-detected-faces'),
+    metricAvgProcessTime: document.getElementById('metric-avg-process-time')
 };
 
 // --- Toast System ---
@@ -262,7 +285,23 @@ function initEvents() {
         
         elements.menuAddToTray.addEventListener('click', () => {
             if (state.contextMenuFace) {
-                addFaceToTray(state.contextMenuFace);
+                if (state.selectedFaceIds && state.selectedFaceIds.includes(state.contextMenuFace.id)) {
+                    let addedCount = 0;
+                    state.selectedFaceIds.forEach(id => {
+                        const faceObj = state.activeGroup.faces.find(f => f.id === id);
+                        if (faceObj && !state.trayFaces.some(tf => tf.id === id)) {
+                            state.trayFaces.push(faceObj);
+                            addedCount++;
+                        }
+                    });
+                    updateTrayUI();
+                    if (addedCount > 0) {
+                        showToast(`Đã thêm ${addedCount} khuôn mặt đã chọn vào khay.`, "success");
+                    }
+                    clearSelection();
+                } else {
+                    addFaceToTray(state.contextMenuFace);
+                }
             }
         });
         
@@ -491,6 +530,82 @@ function initEvents() {
     })
     .catch(err => console.log("System info fetch error:", err));
     
+    // Tab navigation toggles between Dashboard (Main results grid) and History Panel
+    if (elements.navBtnDashboard && elements.navBtnHistory) {
+        elements.navBtnDashboard.addEventListener('click', () => {
+            elements.navBtnDashboard.classList.add('active');
+            elements.navBtnHistory.classList.remove('active');
+            
+            elements.historyPanel.classList.add('hidden');
+            
+            if (state.clusteredGroups && Object.keys(state.clusteredGroups).length > 0) {
+                elements.resultsGridPanel.classList.remove('hidden');
+                elements.emptyState.classList.add('hidden');
+            } else {
+                elements.resultsGridPanel.classList.add('hidden');
+                elements.emptyState.classList.add('hidden');
+            }
+        });
+        
+        elements.navBtnHistory.addEventListener('click', () => {
+            elements.navBtnHistory.classList.add('active');
+            elements.navBtnDashboard.classList.remove('active');
+            
+            elements.resultsGridPanel.classList.add('hidden');
+            elements.emptyState.classList.add('hidden');
+            elements.historyPanel.classList.remove('hidden');
+            
+            // Set scans sub-tab as active by default when visiting History panel
+            if (elements.historyTabScans && elements.historyTabOthers) {
+                elements.historyTabScans.classList.add('active');
+                elements.historyTabScans.style.background = 'rgba(99, 102, 241, 0.15)';
+                elements.historyTabScans.style.color = 'var(--accent-indigo)';
+
+                elements.historyTabOthers.classList.remove('active');
+                elements.historyTabOthers.style.background = 'transparent';
+                elements.historyTabOthers.style.color = 'var(--text-muted)';
+
+                elements.historyScansPanel.classList.remove('hidden');
+                elements.historyOthersPanel.classList.add('hidden');
+            }
+            
+            fetchAndRenderHistory();
+        });
+    }
+
+    // Sub-navigation tabs toggling within History Panel
+    if (elements.historyTabScans && elements.historyTabOthers) {
+        elements.historyTabScans.addEventListener('click', () => {
+            elements.historyTabScans.classList.add('active');
+            elements.historyTabScans.style.background = 'rgba(99, 102, 241, 0.15)';
+            elements.historyTabScans.style.color = 'var(--accent-indigo)';
+
+            elements.historyTabOthers.classList.remove('active');
+            elements.historyTabOthers.style.background = 'transparent';
+            elements.historyTabOthers.style.color = 'var(--text-muted)';
+
+            elements.historyScansPanel.classList.remove('hidden');
+            elements.historyOthersPanel.classList.add('hidden');
+        });
+        
+        elements.historyTabOthers.addEventListener('click', () => {
+            elements.historyTabOthers.classList.add('active');
+            elements.historyTabOthers.style.background = 'rgba(99, 102, 241, 0.15)';
+            elements.historyTabOthers.style.color = 'var(--accent-indigo)';
+
+            elements.historyTabScans.classList.remove('active');
+            elements.historyTabScans.style.background = 'transparent';
+            elements.historyTabScans.style.color = 'var(--text-muted)';
+
+            elements.historyOthersPanel.classList.remove('hidden');
+            elements.historyScansPanel.classList.add('hidden');
+        });
+    }
+
+    if (elements.btnClearHistory) {
+        elements.btnClearHistory.addEventListener('click', clearHistory);
+    }
+    
     // Initialize Sorting Tray UI to collapsed/hidden state
     updateTrayUI();
 }
@@ -519,12 +634,19 @@ function startScanning() {
     
     // Read workers setting
     const workersCount = elements.workersSlider ? parseInt(elements.workersSlider.value) : 4;
+    const detModel = elements.detModelSelect ? elements.detModelSelect.value : "retinaface";
+    const recModel = elements.recModelSelect ? elements.recModelSelect.value : "arcface_r50";
     
     // Trigger Scan API
     fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_dir: srcDir, workers: workersCount })
+        body: JSON.stringify({ 
+            source_dir: srcDir, 
+            workers: workersCount,
+            detection_model: detModel,
+            recognition_model: recModel
+        })
     })
     .then(res => {
         if (!res.ok) {
@@ -1242,20 +1364,28 @@ function renderPeopleGrid() {
             e.preventDefault();
             card.classList.remove('drag-over');
             
-            const faceId = e.dataTransfer.getData('text/plain');
+            const rawData = e.dataTransfer.getData('text/plain');
             const targetClusterId = card.dataset.clusterId;
             const isFromTray = e.dataTransfer.getData('source/tray') === 'true';
+            const isMultiple = e.dataTransfer.getData('is_multiple') === 'true';
             
-            if (faceId && targetClusterId) {
-                if (isFromTray && state.trayFaces.length > 1) {
+            if (rawData && targetClusterId) {
+                if (isMultiple) {
+                    try {
+                        const faceIds = JSON.parse(rawData);
+                        moveMultipleFacesToGroup(faceIds, targetClusterId);
+                    } catch (err) {
+                        console.error("Lỗi parse JSON khi kéo thả nhiều ảnh: ", err);
+                    }
+                } else if (isFromTray && state.trayFaces.length > 1) {
                     const choice = confirm(`Bạn muốn di chuyển TOÀN BỘ ${state.trayFaces.length} ảnh trong khay vào nhóm này?\n\n- Chọn OK: Di chuyển toàn bộ ${state.trayFaces.length} ảnh trong khay.\n- Chọn Cancel: Chỉ di chuyển duy nhất ảnh vừa kéo.`);
                     if (choice) {
                         moveMultipleFacesToGroup(state.trayFaces.map(f => f.id), targetClusterId);
                     } else {
-                        moveFaceToGroup(faceId, targetClusterId);
+                        moveFaceToGroup(rawData, targetClusterId);
                     }
                 } else {
-                    moveFaceToGroup(faceId, targetClusterId);
+                    moveFaceToGroup(rawData, targetClusterId);
                 }
             }
         });
@@ -1265,11 +1395,34 @@ function renderPeopleGrid() {
 }
 
 // --- Detail Modal Operations ---
+function clearSelection() {
+    state.selectedFaceIds = [];
+    document.querySelectorAll('.face-thumb-card').forEach(c => {
+        c.classList.remove('selected');
+    });
+}
+
+function toggleFaceSelection(faceId, faceCardElement) {
+    if (!state.selectedFaceIds) {
+        state.selectedFaceIds = [];
+    }
+    const index = state.selectedFaceIds.indexOf(faceId);
+    if (index > -1) {
+        state.selectedFaceIds.splice(index, 1);
+        faceCardElement.classList.remove('selected');
+    } else {
+        state.selectedFaceIds.push(faceId);
+        faceCardElement.classList.add('selected');
+    }
+}
+
+// --- Detail Modal Operations ---
 function openGroupDetails(clusterId) {
     const group = state.clusteredGroups[clusterId];
     if (!group) return;
     
     state.activeGroup = group;
+    clearSelection();
     
     // Set Header details
     const firstFace = group.faces[0];
@@ -1304,10 +1457,14 @@ function openGroupDetails(clusterId) {
             ${warningBadge}
         `;
         
-        // Open original lightbox on click
+        // Open original lightbox on click, or toggle Ctrl selection
         faceCard.addEventListener('click', (e) => {
             e.stopPropagation();
-            openLightbox(face);
+            if (e.ctrlKey || e.metaKey) {
+                toggleFaceSelection(face.id, faceCard);
+            } else {
+                openLightbox(face);
+            }
         });
         
         // Right-click Context Menu
@@ -1325,7 +1482,14 @@ function openGroupDetails(clusterId) {
         
         // --- Drag Start for Face Cards ---
         faceCard.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('text/plain', face.id);
+            if (state.selectedFaceIds && state.selectedFaceIds.includes(face.id)) {
+                e.dataTransfer.setData('text/plain', JSON.stringify(state.selectedFaceIds));
+                e.dataTransfer.setData('is_multiple', 'true');
+            } else {
+                clearSelection();
+                e.dataTransfer.setData('text/plain', face.id);
+                e.dataTransfer.setData('is_multiple', 'false');
+            }
             faceCard.style.opacity = '0.4';
             
             // Highlight all other cards in main grid except this one
@@ -1352,6 +1516,7 @@ function openGroupDetails(clusterId) {
 function closeModal() {
     elements.groupModal.classList.add('hidden');
     state.activeGroup = null;
+    clearSelection();
 }
 
 // --- Renaming Logic ---
@@ -2165,6 +2330,329 @@ function updateStructureVisualizer(type) {
     }
     
     elements.structurePreview.textContent = treeText;
+}
+
+// --- Activity History Operations ---
+function fetchAndRenderHistory() {
+    fetch('/api/history')
+    .then(res => {
+        if (!res.ok) throw new Error("Không thể tải lịch sử hoạt động.");
+        return res.json();
+    })
+    .then(events => {
+        renderHistoryDashboard(events);
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    });
+}
+
+function renderHistoryDashboard(events) {
+    if (!events) events = [];
+    
+    // Separate scan events from other operational events
+    const scanEvents = events.filter(e => e.event_type === 'scan');
+    const otherEvents = events.filter(e => e.event_type !== 'scan');
+    
+    // 1. Calculate and Render Metric Cards
+    const totalScans = scanEvents.length;
+    let totalFaces = 0;
+    let totalDuration = 0;
+    
+    scanEvents.forEach(evt => {
+        totalFaces += (evt.details?.faces_found || 0);
+        totalDuration += (evt.details?.duration_seconds || 0);
+    });
+    
+    const avgDuration = totalScans > 0 ? (totalDuration / totalScans) : 0;
+    
+    if (elements.metricTotalBatches) {
+        elements.metricTotalBatches.textContent = totalScans.toLocaleString('vi-VN');
+    }
+    if (elements.metricTotalDetectedFaces) {
+        elements.metricTotalDetectedFaces.textContent = totalFaces.toLocaleString('vi-VN');
+    }
+    if (elements.metricAvgProcessTime) {
+        elements.metricAvgProcessTime.textContent = `${avgDuration.toFixed(1)}s`;
+    }
+    
+    // 2. Render Scans Table
+    if (elements.historyScansTbody) {
+        elements.historyScansTbody.innerHTML = '';
+        
+        if (scanEvents.length === 0) {
+            elements.historyScansEmpty.classList.remove('hidden');
+            document.getElementById('history-scans-table').style.display = 'none';
+        } else {
+            elements.historyScansEmpty.classList.add('hidden');
+            document.getElementById('history-scans-table').style.display = 'table';
+            
+            // Sort scan events by id/timestamp descending (newest first)
+            const sortedScans = [...scanEvents].sort((a, b) => b.id - a.id);
+            
+            sortedScans.forEach(evt => {
+                const details = evt.details || {};
+                const folderName = getFolderName(details.directory);
+                
+                const dateObj = new Date(evt.id);
+                const day = dateObj.getDate();
+                const month = dateObj.getMonth() + 1;
+                const year = dateObj.getFullYear();
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="padding: 16px 14px; display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                            <svg style="width: 16px; height: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        </div>
+                        <span style="font-weight: 700; color: var(--text-primary);">${folderName}</span>
+                    </td>
+                    <td style="padding: 16px 14px; line-height: 1.4;">
+                        <span style="font-size: 14.5px; font-weight: 800; color: var(--text-primary);">${day < 10 ? '0' : ''}${day}</span><br>
+                        <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">Tháng ${month}, ${year}</span>
+                    </td>
+                    <td style="padding: 16px 14px; text-align: right; font-weight: 700; color: var(--text-muted); font-family: monospace;">
+                        ${(details.total_files || 0).toLocaleString('vi-VN')}
+                    </td>
+                    <td style="padding: 16px 14px; text-align: right; font-weight: 700; color: var(--text-muted); font-family: monospace;">
+                        ${(details.faces_found || 0).toLocaleString('vi-VN')}
+                    </td>
+                    <td style="padding: 16px 14px; text-align: center;">
+                        <span class="status-pill success">Success</span>
+                    </td>
+                    <td style="padding: 16px 14px; text-align: center;">
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+                            <button class="btn-table-action btn-re-scan" title="Quét lại thư mục này" style="background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: var(--transition-fast);">
+                                <svg style="width: 15px; height: 15px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                            </button>
+                            <button class="btn-table-action btn-view-scan-details" title="Xem chi tiết thông số" style="background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: var(--transition-fast);">
+                                <svg style="width: 15px; height: 15px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                            </button>
+                            <button class="btn-table-action btn-delete-scan-row" title="Xoá lịch sử lô này" style="background: transparent; border: none; color: #fca5a5; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: var(--transition-fast);">
+                                <svg style="width: 15px; height: 15px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                
+                // Add event listeners to row action buttons
+                tr.querySelector('.btn-re-scan').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (details.directory) {
+                        elements.sourceDirInput.value = details.directory;
+                        elements.navBtnDashboard.click();
+                        showToast(`Đã chọn lại thư mục: ${details.directory}`, "info");
+                        startScanning();
+                    }
+                });
+                
+                tr.querySelector('.btn-view-scan-details').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const detFriendly = details.detection_model === 'yunet' ? 'YuNet (Siêu nhanh)' : 'RetinaFace (Chính xác)';
+                    const recFriendly = details.recognition_model === 'sface' ? 'SFace (Siêu nhanh)' : 
+                                        details.recognition_model === 'arcface_r100' ? 'ArcFace R100 (Cực nét)' : 'ArcFace R50 (Cân bằng)';
+                    alert(`THÔNG TIN CHI TIẾT LÔ QUÉT:\n-------------------------------------\n• Thư mục: ${details.directory || 'N/A'}\n• Thời gian hoàn thành: ${dateObj.toLocaleString('vi-VN')}\n• Model phát hiện: ${detFriendly}\n• Model nhận diện: ${recFriendly}\n• Tổng thời gian: ${details.duration_seconds ? details.duration_seconds.toFixed(1) : 0} giây\n• Số lượng ảnh: ${details.total_files || 0}\n• Số mặt tìm thấy: ${details.faces_found || 0}`);
+                });
+                
+                tr.querySelector('.btn-delete-scan-row').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteHistoryEvent(evt.id);
+                });
+                
+                elements.historyScansTbody.appendChild(tr);
+            });
+        }
+    }
+    
+    // 3. Render Other Operations Timeline
+    if (elements.historyTimelineList) {
+        elements.historyTimelineList.innerHTML = '';
+        
+        if (otherEvents.length === 0) {
+            elements.historyOthersEmpty.classList.remove('hidden');
+            elements.historyTimelineList.classList.add('hidden');
+        } else {
+            elements.historyOthersEmpty.classList.add('hidden');
+            elements.historyTimelineList.classList.remove('hidden');
+            
+            renderHistoryTimeline(otherEvents);
+        }
+    }
+}
+
+function getFolderName(pathStr) {
+    if (!pathStr) return "N/A";
+    const parts = pathStr.split(/[/\\]/);
+    const cleanParts = parts.filter(p => p.trim() !== "");
+    return cleanParts.length > 0 ? cleanParts[cleanParts.length - 1] : pathStr;
+}
+
+function deleteHistoryEvent(eventId) {
+    if (confirm("Bạn có chắc chắn muốn xoá mục lịch sử này không?")) {
+        fetch(`/api/history/delete/${eventId}`, { method: 'POST' })
+        .then(res => {
+            if (!res.ok) throw new Error("Không thể xoá mục lịch sử.");
+            return res.json();
+        })
+        .then(() => {
+            showToast("Đã xoá mục lịch sử thành công.", "success");
+            fetchAndRenderHistory();
+        })
+        .catch(err => {
+            showToast(err.message, "error");
+        });
+    }
+}
+
+function renderHistoryTimeline(events) {
+    if (!events || events.length === 0) {
+        return;
+    }
+    
+    // Sort events by timestamp descending (newest first)
+    const sortedEvents = [...events].sort((a, b) => b.id - a.id);
+    
+    sortedEvents.forEach(evt => {
+        const item = document.createElement('div');
+        item.className = `timeline-item ${evt.event_type}`;
+        
+        // Format relative or local time
+        const dateObj = new Date(evt.id);
+        const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const dateStr = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        
+        let iconSvg = '';
+        let title = '';
+        let contentHtml = '';
+        
+        const details = evt.details || {};
+        
+        switch (evt.event_type) {
+            case 'rename':
+                iconSvg = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                    </svg>
+                `;
+                title = 'Đổi tên thành viên';
+                contentHtml = `
+                    <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                        Đã đổi tên nhóm từ <span style="text-decoration: line-through; color: var(--text-dim);">${details.old_name || 'Chưa đặt tên'}</span> thành <strong style="color: var(--accent-indigo);">${details.new_name || 'N/A'}</strong>.
+                        <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">ID Nhóm: <code style="font-family: monospace;">${details.cluster_id || ''}</code></div>
+                    </div>
+                `;
+                break;
+            case 'move':
+                iconSvg = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <polyline points="9 21 3 21 3 15"></polyline>
+                        <line x1="21" y1="3" x2="14" y2="10"></line>
+                        <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                `;
+                title = 'Di chuyển khuôn mặt';
+                contentHtml = `
+                    <div style="font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <img src="${details.face_crop_image || ''}" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover; border: 1px solid rgba(255,255,255,0.08);" alt="Face thumbnail">
+                        <div>
+                            <div>Di chuyển khuôn mặt từ nhóm <strong style="color: var(--text-primary);">${details.from_group_name || 'Chưa đặt tên'}</strong> sang nhóm <strong style="color: #3b82f6;">${details.to_group_name || 'Chưa đặt tên'}</strong>.</div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">Tên ảnh gốc: <span style="font-family: monospace;">${details.photo_name || ''}</span></div>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'merge':
+                iconSvg = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                `;
+                title = 'Gộp nhóm thành viên';
+                contentHtml = `
+                    <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                        Đã gộp nhóm <strong style="color: var(--text-primary);">${details.source_group_name || 'Chưa đặt tên'}</strong> vào nhóm chính <strong style="color: #f59e0b;">${details.target_group_name || 'Chưa đặt tên'}</strong>.
+                        <div style="margin-top: 4px;">• Số khuôn mặt đã chuyển: <strong style="color: var(--text-primary);">${details.faces_moved_count || 0}</strong></div>
+                    </div>
+                `;
+                break;
+            case 'learn':
+                iconSvg = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M9.5 2A5.5 5.5 0 0 0 4 7.5v1.4a2 2 0 0 1-.6 1.4L2 11.5V14h20v-2.5l-1.4-1.6a2 2 0 0 1-.6-1.4V7.5A5.5 5.5 0 0 0 14.5 2h-5Z"></path>
+                        <path d="M8 21h8"></path>
+                        <path d="M12 17v4"></path>
+                    </svg>
+                `;
+                title = 'Huấn luyện học máy AI';
+                
+                let answerText = '';
+                if (details.is_same === true) {
+                    answerText = '<span style="color: var(--accent-emerald); font-weight: 700;">Đúng, cùng một người</span>';
+                } else if (details.is_same === false) {
+                    answerText = '<span style="color: #f43f5e; font-weight: 700;">Không, hai người khác nhau</span>';
+                } else {
+                    answerText = '<span style="color: var(--text-dim); font-style: italic;">Bỏ qua câu hỏi</span>';
+                }
+                
+                contentHtml = `
+                    <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+                        <div>Phản hồi từ người dùng: ${answerText}</div>
+                        <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center; background: rgba(255,255,255,0.01); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.03);">
+                            <img src="${details.face_a_crop || ''}" style="width: 38px; height: 38px; border-radius: 6px; object-fit: cover; border: 1px solid rgba(255,255,255,0.08);" alt="Face A">
+                            <span style="font-size: 12px; color: var(--text-primary); font-weight: 500;">${details.face_a_name || 'Chưa đặt tên'}</span>
+                            <span style="color: var(--text-dim); font-weight: bold; margin: 0 4px;">⇆</span>
+                            <img src="${details.face_b_crop || ''}" style="width: 38px; height: 38px; border-radius: 6px; object-fit: cover; border: 1px solid rgba(255,255,255,0.08);" alt="Face B">
+                            <span style="font-size: 12px; color: var(--text-primary); font-weight: 500;">${details.face_b_name || 'Chưa đặt tên'}</span>
+                        </div>
+                    </div>
+                `;
+                break;
+            default:
+                iconSvg = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10"></circle>
+                    </svg>
+                `;
+                title = 'Sự kiện hệ thống';
+                contentHtml = `<pre style="font-size: 12px; color: var(--text-muted); font-family: monospace; white-space: pre-wrap;">${JSON.stringify(details)}</pre>`;
+        }
+        
+        item.innerHTML = `
+            <div class="timeline-item-icon">
+                ${iconSvg}
+            </div>
+            <div class="timeline-item-content">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; width: 100%; flex-wrap: wrap;">
+                    <div class="timeline-item-title">${title}</div>
+                    <div class="timeline-item-time">${timeStr} - ${dateStr}</div>
+                </div>
+                <div class="timeline-item-desc" style="margin-top: 6px;">
+                    ${contentHtml}
+                </div>
+            </div>
+        `;
+        
+        elements.historyTimelineList.appendChild(item);
+    });
+}
+
+function clearHistory() {
+    if (confirm("Bạn có chắc chắn muốn xoá toàn bộ lịch sử hoạt động không? Hành động này sẽ xoá vĩnh viễn log các sự kiện cũ.")) {
+        fetch('/api/history/clear', { method: 'POST' })
+        .then(res => {
+            if (!res.ok) throw new Error("Không thể xoá lịch sử.");
+            return res.json();
+        })
+        .then(() => {
+            showToast("Đã xoá sạch lịch sử hoạt động thành công.", "success");
+            fetchAndRenderHistory();
+        })
+        .catch(err => {
+            showToast(err.message, "error");
+        });
+    }
 }
 
 // Initialize Application
