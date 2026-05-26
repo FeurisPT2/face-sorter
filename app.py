@@ -1,7 +1,7 @@
 import os
 import sys
 import threading
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
@@ -32,7 +32,7 @@ app.mount("/static/cache", StaticFiles(directory=str(CACHE_DIR)), name="cache")
 # Global states
 processor = FaceProcessor()
 scan_state = {
-    "status": "idle",  # "idle", "scanning", "done", "error"
+    "status": "idle",  # "idle", "scanning", "paused", "done", "error"
     "total_files": 0,
     "processed_files": 0,
     "current_file": "",
@@ -43,6 +43,11 @@ scan_results = []       # Stores the raw face detections with embeddings
 clustered_groups = {}   # Map of cluster_id -> group details
 person_names = {}       # Map of cluster_id -> custom person name
 custom_assignments = {} # Map of face_id -> target_cluster_id (for manual override)
+
+# Scan control events
+scan_pause_event = threading.Event()
+scan_pause_event.set()  # set means running, cleared means paused
+scan_stop_event = threading.Event()
 
 class ScanRequest(BaseModel):
     source_dir: str
@@ -130,6 +135,13 @@ def run_background_scan(source_path: Path, num_workers: int = 4):
             # Sequential mode — use the main processor directly (no subprocess overhead)
             processor.load_models()
             for idx, img_file in enumerate(image_files):
+                if scan_stop_event.is_set():
+                    break
+                if not scan_pause_event.is_set():
+                    scan_pause_event.wait()
+                    if scan_stop_event.is_set():
+                        break
+                        
                 scan_state["current_file"] = img_file.name
                 scan_state["processed_files"] = idx + 1
                 try:
@@ -146,42 +158,76 @@ def run_background_scan(source_path: Path, num_workers: int = 4):
                 initializer=_init_worker,
                 initargs=(models_dir_str,)
             ) as executor:
-                # Submit all tasks and map futures back to filenames
-                future_to_filename = {}
-                for args in task_args:
-                    future = executor.submit(_process_single_image, args)
-                    future_to_filename[future] = Path(args[0]).name
+                # Submit up to max_workers * 2 tasks initially to avoid overfilling worker queues
+                pending_futures = {}
+                img_idx = 0
+                total_imgs = len(image_files)
                 
-                # Collect results as they complete (real-time progress)
-                for future in as_completed(future_to_filename):
-                    processed_count += 1
-                    filename = future_to_filename[future]
+                def submit_next():
+                    nonlocal img_idx
+                    if img_idx < total_imgs:
+                        img_file = image_files[img_idx]
+                        args = (str(img_file), cache_dir_str)
+                        future = executor.submit(_process_single_image, args)
+                        pending_futures[future] = img_file.name
+                        img_idx += 1
+                
+                # Populate initial batch
+                for _ in range(min(total_imgs, max_workers * 2)):
+                    submit_next()
+                
+                while pending_futures:
+                    if scan_stop_event.is_set():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+                        
+                    # Check for pause state
+                    if not scan_pause_event.is_set():
+                        scan_pause_event.wait()
+                        if scan_stop_event.is_set():
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            break
                     
-                    with _scan_lock:
-                        scan_state["current_file"] = filename
-                        scan_state["processed_files"] = processed_count
+                    # Top up queue if we have room and are not paused/stopped
+                    while len(pending_futures) < max_workers * 2 and img_idx < total_imgs and not scan_stop_event.is_set() and scan_pause_event.is_set():
+                        submit_next()
+                        
+                    # Wait for at least one future to complete
+                    done, _ = wait(
+                        list(pending_futures.keys()),
+                        return_when=FIRST_COMPLETED
+                    )
                     
-                    try:
-                        faces = future.result()
-                        if faces:
-                            faces_accumulator.extend(faces)
+                    for future in done:
+                        if future in pending_futures:
+                            processed_count += 1
+                            filename = pending_futures.pop(future)
+                            
                             with _scan_lock:
-                                scan_state["faces_found"] += len(faces)
-                    except Exception as e:
-                        print(f"Lỗi khi xử lý ảnh {filename}: {e}")
+                                scan_state["current_file"] = filename
+                                scan_state["processed_files"] = processed_count
+                            
+                            try:
+                                faces = future.result()
+                                if faces:
+                                    faces_accumulator.extend(faces)
+                                    with _scan_lock:
+                                        scan_state["faces_found"] += len(faces)
+                            except Exception as e:
+                                print(f"Lỗi khi xử lý ảnh {filename}: {e}")
         
         scan_results = faces_accumulator
         scan_state["status"] = "done"
         
         # Initial clustering
-        run_clustering(eps=1.12)
+        run_clustering(eps=0.42)
         
     except Exception as e:
         scan_state["status"] = "error"
         scan_state["error_message"] = f"Lỗi hệ thống trong quá trình quét: {str(e)}"
         print(f"Background scanning critical error: {e}")
 
-def run_clustering(eps: float = 1.12):
+def run_clustering(eps: float = 0.42):
     """Internal function to run clustering and merge manual overrides."""
     global scan_results, clustered_groups, person_names, custom_assignments
     
@@ -203,8 +249,9 @@ def run_clustering(eps: float = 1.12):
             face_map[face_id]["cluster_id"] = target_cluster
             # We don't change the default person_name here, we will merge it below
             
-    # 3. Re-group based on final cluster IDs
-    final_groups = {}
+    # 3. Re-group based on final person names (to merge groups with the exact same name)
+    name_to_group = {}
+    
     for face in face_map.values():
         cluster_id = face["cluster_id"]
         
@@ -224,16 +271,23 @@ def run_clustering(eps: float = 1.12):
         person_name = person_names[cluster_id]
         face["person_name"] = person_name
         
-        if cluster_id not in final_groups:
-            final_groups[cluster_id] = {
-                "cluster_id": cluster_id,
+        if person_name not in name_to_group:
+            name_to_group[person_name] = {
+                "cluster_id": cluster_id,  # Representative cluster_id (using the first encountered)
                 "person_name": person_name,
                 "faces": []
             }
-        final_groups[cluster_id]["faces"].append(face)
+        name_to_group[person_name]["faces"].append(face)
         
+    # Re-map all faces in the merged groups to have the representative cluster_id
+    # so that manual overrides and overrides state remain consistent!
+    for group in name_to_group.values():
+        rep_cluster_id = group["cluster_id"]
+        for face in group["faces"]:
+            face["cluster_id"] = rep_cluster_id
+            
     # Sort groups by size (descending)
-    sorted_groups = sorted(final_groups.values(), key=lambda g: len(g["faces"]), reverse=True)
+    sorted_groups = sorted(name_to_group.values(), key=lambda g: len(g["faces"]), reverse=True)
     
     # Re-build sorted groups dictionary
     clustered_groups = {g["cluster_id"]: g for g in sorted_groups}
@@ -246,21 +300,72 @@ def scan_directory(request: ScanRequest, background_tasks: BackgroundTasks):
     if not source_path.exists() or not source_path.is_dir():
         raise HTTPException(status_code=400, detail="Thư mục nguồn không tồn tại hoặc không phải là thư mục hợp lệ.")
         
-    if scan_state["status"] == "scanning":
+    if scan_state["status"] in ("scanning", "paused"):
         return {"status": "scanning", "message": "Quá trình quét đang diễn ra, vui lòng chờ."}
         
+    # Reset control events
+    scan_pause_event.set()
+    scan_stop_event.clear()
+    
     # Start scanning in background
     background_tasks.add_task(run_background_scan, source_path, request.workers)
     return {"status": "started", "message": f"Bắt đầu quét ảnh với {request.workers} luồng xử lý song song."}
+
+@app.post("/api/scan/pause")
+def pause_scan():
+    if scan_state["status"] != "scanning":
+        raise HTTPException(status_code=400, detail="Tiến trình không ở trạng thái đang quét.")
+    scan_pause_event.clear()
+    scan_state["status"] = "paused"
+    return {"status": "success", "message": "Đã gửi yêu cầu tạm dừng tiến trình."}
+
+@app.post("/api/scan/resume")
+def resume_scan():
+    if scan_state["status"] != "paused":
+        raise HTTPException(status_code=400, detail="Tiến trình không ở trạng thái tạm dừng.")
+    scan_pause_event.set()
+    scan_state["status"] = "scanning"
+    return {"status": "success", "message": "Đã gửi yêu cầu tiếp tục tiến trình."}
+
+@app.post("/api/scan/stop")
+def stop_scan():
+    if scan_state["status"] not in ("scanning", "paused"):
+        raise HTTPException(status_code=400, detail="Không có tiến trình quét nào đang chạy để dừng.")
+    scan_stop_event.set()
+    scan_pause_event.set() # Resume if paused so it can check stop status and exit
+    return {"status": "success", "message": "Đã gửi yêu cầu kết thúc tiến trình."}
 
 @app.get("/api/scan-status")
 def get_scan_status():
     return JSONResponse(content=scan_state)
 
+@app.get("/api/system-info")
+def get_system_info():
+    import os
+    return {"cpu_count": os.cpu_count() or 4}
+
 @app.get("/api/cluster")
-def get_clusters(eps: float = Query(1.12, description="DBSCAN clustering epsilon parameter")):
+def get_clusters(eps: float = Query(0.42, description="DBSCAN clustering epsilon (cosine distance threshold)")):
     run_clustering(eps=eps)
     return JSONResponse(content=list(clustered_groups.values()))
+
+@app.post("/api/auto-tune")
+def auto_tune_clustering():
+    global scan_results
+    if not scan_results:
+        raise HTTPException(status_code=400, detail="Chưa có dữ liệu ảnh quét để tối ưu hóa.")
+    
+    optimal_eps = FaceClusterer.auto_tune_epsilon(scan_results)
+    optimal_sensitivity = float(round(1.0 - optimal_eps, 2))
+    
+    run_clustering(eps=optimal_eps)
+    
+    return {
+        "status": "success",
+        "optimal_eps": optimal_eps,
+        "optimal_sensitivity": optimal_sensitivity,
+        "message": f"Đã tìm thấy độ nhạy tối ưu: {optimal_sensitivity} (Eps: {optimal_eps})"
+    }
 
 @app.post("/api/rename")
 def rename_person(request: RenameRequest):
@@ -273,11 +378,8 @@ def rename_person(request: RenameRequest):
         
     person_names[cluster_id] = new_name
     
-    # Update current clustered groups names in-place
-    if cluster_id in clustered_groups:
-        clustered_groups[cluster_id]["person_name"] = new_name
-        for face in clustered_groups[cluster_id]["faces"]:
-            face["person_name"] = new_name
+    # Run clustering to merge groups with duplicate names immediately
+    run_clustering()
             
     return {"status": "success", "message": f"Đã đổi tên nhóm thành '{new_name}'"}
 

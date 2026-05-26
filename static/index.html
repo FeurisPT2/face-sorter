@@ -80,11 +80,16 @@
                 <div class="slider-group">
                     <div class="slider-labels">
                         <span>Chính xác hơn</span>
-                        <span id="sensitivity-value">1.12</span>
+                        <span id="sensitivity-value">0.58</span>
                         <span>Nhiều nhóm hơn</span>
                     </div>
-                    <input type="range" id="sensitivity-slider" min="0.6" max="1.6" step="0.02" value="1.12">
+                    <input type="range" id="sensitivity-slider" min="0.15" max="0.85" step="0.01" value="0.58">
                     <p class="slider-hint">Giảm độ nhạy (kéo về trái) để gộp các nhóm khuôn mặt giống nhau. Tăng độ nhạy (kéo về phải) để tách nhóm kĩ hơn.</p>
+                    
+                    <button id="btn-auto-tune" class="btn btn-secondary" style="width: 100%; margin-top: 12px; font-weight: 600; border-color: rgba(16, 185, 129, 0.4); color: var(--accent-emerald);">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        Tự động tối ưu ⚡
+                    </button>
                     
                     <!-- Interactive Sensitivity Visualizer -->
                     <div class="visualizer-container" id="sensitivity-visualizer" style="margin-top: 14px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 12px; display: flex; flex-direction: column; gap: 10px; transition: var(--transition-normal);">
@@ -189,6 +194,21 @@
                         <span id="progress-count">Đã xử lý: 0/0 ảnh</span>
                         <span id="progress-faces">Đã tìm thấy: 0 khuôn mặt</span>
                     </div>
+                    <div class="progress-controls">
+                        <button id="btn-pause-scan" class="btn btn-secondary">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="6" y="4" width="4" height="16"></rect>
+                                <rect x="14" y="4" width="4" height="16"></rect>
+                            </svg>
+                            <span id="btn-pause-text">Tạm dừng</span>
+                        </button>
+                        <button id="btn-stop-scan" class="btn btn-danger">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="4" y="4" width="16" height="16"></rect>
+                            </svg>
+                            Kết thúc
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -213,9 +233,33 @@
 
             <!-- Clustered Results Grid -->
             <section id="results-grid-panel" class="results-grid-panel hidden">
-                <div class="panel-header">
-                    <h2>Danh sách khuôn mặt đã nhận dạng</h2>
-                    <p class="panel-subtitle">Nhấn vào từng người để xem các bức ảnh chứa họ, sửa tên, hoặc kéo thả để ghép nhóm.</p>
+                <div class="panel-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <h2>Danh sách khuôn mặt đã nhận dạng</h2>
+                        <p class="panel-subtitle">Nhấn vào từng người để xem các bức ảnh chứa họ, sửa tên, hoặc kéo thả để ghép nhóm.</p>
+                    </div>
+                    
+                    <!-- Dynamic Controls: Tabs + Sorting Dropdown -->
+                    <div class="results-controls" style="display: flex; align-items: center; gap: 16px; margin-top: 4px;">
+                        <!-- Filter Tabs -->
+                        <div class="filter-tabs" style="display: flex; background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: 12px; padding: 4px;">
+                            <button id="filter-all" class="tab-btn active" style="background: rgba(99, 102, 241, 0.15); border: none; color: var(--accent-indigo); padding: 6px 14px; font-size: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: var(--transition-fast);">Tất cả</button>
+                            <button id="filter-warnings" class="tab-btn" style="background: transparent; border: none; color: var(--text-muted); padding: 6px 14px; font-size: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: var(--transition-fast); display: flex; align-items: center; gap: 4px;">
+                                ⚠️ Cần kiểm tra
+                            </button>
+                        </div>
+                        
+                        <!-- Sort Selector -->
+                        <div class="sort-selector" style="display: flex; align-items: center; gap: 8px;">
+                            <label for="sort-by" style="font-size: 12px; font-weight: 600; color: var(--text-dim);">Sắp xếp:</label>
+                            <select id="sort-by" class="select-glass" style="background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-glass); border-radius: 12px; padding: 8px 12px; color: var(--text-primary); font-size: 12px; font-weight: 500; outline: none; cursor: pointer; transition: var(--transition-fast);">
+                                <option value="size_desc" style="background: var(--bg-dark);">Số lượng ảnh (Nhiều → Ít)</option>
+                                <option value="size_asc" style="background: var(--bg-dark);">Số lượng ảnh (Ít → Nhiều)</option>
+                                <option value="name_asc" style="background: var(--bg-dark);">Tên nhóm (A → Z)</option>
+                                <option value="warnings_desc" style="background: var(--bg-dark);">⚠️ Cảnh báo (Nhiều → Ít)</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
                 <div id="people-grid" class="people-grid">
                     <!-- Cards will be dynamically injected here -->

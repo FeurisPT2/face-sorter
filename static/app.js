@@ -4,14 +4,16 @@ const state = {
     activeGroup: null,
     sourceDir: "",
     exportDir: "",
-    sensitivity: 1.12,
+    sensitivity: 0.58,
     workers: 4,
     statusInterval: null,
     scanStartTime: null,
     activeFaceData: null, // Cache details of face currently viewed in lightbox
     wizardActive: false,
     wizardIndex: 0,
-    wizardGroups: []
+    wizardGroups: [],
+    activeFilter: "all", // "all", "warnings"
+    sortByOption: "size_desc" // "size_desc", "size_asc", "name_asc", "warnings_desc"
 };
 
 // DOM Elements
@@ -23,6 +25,7 @@ const elements = {
     btnCreateSamples: document.getElementById('btn-create-samples'),
     sensitivitySlider: document.getElementById('sensitivity-slider'),
     sensitivityValue: document.getElementById('sensitivity-value'),
+    btnAutoTune: document.getElementById('btn-auto-tune'),
     configClustering: document.getElementById('config-clustering'),
     configExport: document.getElementById('config-export'),
     configNaming: document.getElementById('config-naming'),
@@ -41,6 +44,9 @@ const elements = {
     visNode3: document.getElementById('vis-node-3'),
     visNode4: document.getElementById('vis-node-4'),
     structurePreview: document.getElementById('structure-preview'),
+    filterAll: document.getElementById('filter-all'),
+    filterWarnings: document.getElementById('filter-warnings'),
+    sortBy: document.getElementById('sort-by'),
     
     // Header Stats
     appStatusBadge: document.getElementById('app-status-badge'),
@@ -61,6 +67,9 @@ const elements = {
     progressBarFill: document.getElementById('progress-bar-fill'),
     progressCount: document.getElementById('progress-count'),
     progressFaces: document.getElementById('progress-faces'),
+    btnPauseScan: document.getElementById('btn-pause-scan'),
+    btnPauseText: document.getElementById('btn-pause-text'),
+    btnStopScan: document.getElementById('btn-stop-scan'),
     
     // Modal (Group details)
     groupModal: document.getElementById('group-modal'),
@@ -140,6 +149,12 @@ function debounce(func, wait) {
 function initEvents() {
     elements.btnScan.addEventListener('click', startScanning);
     elements.btnExport.addEventListener('click', exportResults);
+    if (elements.btnPauseScan) {
+        elements.btnPauseScan.addEventListener('click', togglePauseScan);
+    }
+    if (elements.btnStopScan) {
+        elements.btnStopScan.addEventListener('click', requestStopScan);
+    }
     
     // Debounced slider matching
     elements.sensitivitySlider.addEventListener('input', (e) => {
@@ -222,9 +237,76 @@ function initEvents() {
         });
     }
     
+    // Auto-tune button listener
+    if (elements.btnAutoTune) {
+        elements.btnAutoTune.addEventListener('click', triggerAutoTune);
+    }
+    
+    // Grid Filter Tabs listeners
+    if (elements.filterAll && elements.filterWarnings) {
+        elements.filterAll.addEventListener('click', () => {
+            elements.filterAll.classList.add('active');
+            elements.filterAll.style.background = 'rgba(99, 102, 241, 0.15)';
+            elements.filterAll.style.color = 'var(--accent-indigo)';
+            
+            elements.filterWarnings.classList.remove('active');
+            elements.filterWarnings.style.background = 'transparent';
+            elements.filterWarnings.style.color = 'var(--text-muted)';
+            
+            state.activeFilter = 'all';
+            renderPeopleGrid();
+        });
+        
+        elements.filterWarnings.addEventListener('click', () => {
+            elements.filterWarnings.classList.add('active');
+            elements.filterWarnings.style.background = 'rgba(99, 102, 241, 0.15)';
+            elements.filterWarnings.style.color = 'var(--accent-indigo)';
+            
+            elements.filterAll.classList.remove('active');
+            elements.filterAll.style.background = 'transparent';
+            elements.filterAll.style.color = 'var(--text-muted)';
+            
+            state.activeFilter = 'warnings';
+            renderPeopleGrid();
+        });
+    }
+    
+    // Sort dropdown listener
+    if (elements.sortBy) {
+        elements.sortBy.addEventListener('change', (e) => {
+            state.sortByOption = e.target.value;
+            renderPeopleGrid();
+        });
+    }
+
     // Initialize Visualizers
     updateSensitivityVisualizer(parseFloat(elements.sensitivitySlider.value));
     updateStructureVisualizer(elements.exportStructureSelect.value);
+    
+    // Dynamically query CPU count to scale workers slider
+    fetch('/api/system-info')
+    .then(res => res.json())
+    .then(info => {
+        if (elements.workersSlider) {
+            const cpuCount = info.cpu_count;
+            elements.workersSlider.max = cpuCount;
+            
+            // Update hint text dynamically to reflect hardware capabilities
+            const hint = elements.workersSlider.nextElementSibling;
+            if (hint && hint.classList.contains('slider-hint')) {
+                hint.textContent = `Tự động tối ưu hoá cho cấu hình máy của bạn: hỗ trợ từ 1 đến ${cpuCount} luồng song song.`;
+            }
+            
+            // Set dynamic default: half of CPU cores, but at least 4 (capped by cpuCount)
+            const defaultVal = Math.min(Math.max(4, Math.floor(cpuCount / 2)), cpuCount);
+            elements.workersSlider.value = defaultVal;
+            state.workers = defaultVal;
+            if (elements.workersValue) {
+                elements.workersValue.textContent = defaultVal;
+            }
+        }
+    })
+    .catch(err => console.log("System info fetch error:", err));
 }
 
 // --- Face Scanning Operations ---
@@ -279,14 +361,14 @@ function pollScanStatus() {
     fetch('/api/scan-status')
     .then(res => res.json())
     .then(status => {
-        if (status.status === 'scanning') {
+        if (status.status === 'scanning' || status.status === 'paused') {
             const total = status.total_files;
             const processed = status.processed_files;
             const pct = total > 0 ? (processed / total) * 100 : 0;
             
             // Calculate speed (images per second)
             let speedText = '';
-            if (processed > 0 && state.scanStartTime) {
+            if (processed > 0 && state.scanStartTime && status.status === 'scanning') {
                 const elapsedSec = (Date.now() - state.scanStartTime) / 1000;
                 const speed = (processed / elapsedSec).toFixed(1);
                 const remaining = total - processed;
@@ -294,9 +376,11 @@ function pollScanStatus() {
                 const etaMin = Math.floor(etaSec / 60);
                 const etaSecRem = Math.floor(etaSec % 60);
                 speedText = ` • ${speed} ảnh/giây • ETA: ${etaMin}p${etaSecRem < 10 ? '0' : ''}${etaSecRem}s`;
+            } else if (status.status === 'paused') {
+                speedText = ` • Đang tạm dừng`;
             }
             
-            elements.progressTitle.textContent = total > 0 ? `Đang xử lý ảnh (${Math.round(pct)}%)` : "Đang phân tích thư mục...";
+            elements.progressTitle.textContent = status.status === 'paused' ? 'Đang tạm dừng...' : (total > 0 ? `Đang xử lý ảnh (${Math.round(pct)}%)` : "Đang phân tích thư mục...");
             elements.progressFile.textContent = status.current_file || "...";
             elements.progressBarFill.style.width = `${pct}%`;
             elements.progressCount.textContent = `Đã xử lý: ${processed}/${total} ảnh${speedText}`;
@@ -305,18 +389,26 @@ function pollScanStatus() {
             // Stats headers
             elements.statTotalPhotos.textContent = total;
             elements.statTotalFaces.textContent = status.faces_found;
+            
+            // Sync play/pause UI
+            updatePauseUI(status.status === 'paused');
         } 
         else if (status.status === 'done') {
             clearInterval(state.statusInterval);
             showToast(`Hoàn tất! Đã xử lý toàn bộ ảnh và tìm thấy ${status.faces_found} khuôn mặt.`, "success");
             
-            // Enable configurations
-            elements.configNaming.style.opacity = '1';
-            elements.configNaming.style.pointerEvents = 'auto';
-            elements.configClustering.style.opacity = '1';
-            elements.configClustering.style.pointerEvents = 'auto';
-            elements.configExport.style.opacity = '1';
-            elements.configExport.style.pointerEvents = 'auto';
+            // Enable configurations by removing CSS class that blocks interaction
+            elements.configNaming.classList.remove('disabled-before-scan');
+            elements.configNaming.style.opacity = '';
+            elements.configNaming.style.pointerEvents = '';
+            
+            elements.configClustering.classList.remove('disabled-before-scan');
+            elements.configClustering.style.opacity = '';
+            elements.configClustering.style.pointerEvents = '';
+            
+            elements.configExport.classList.remove('disabled-before-scan');
+            elements.configExport.style.opacity = '';
+            elements.configExport.style.pointerEvents = '';
             
             elements.btnScan.disabled = false;
             elements.scanProgressPanel.classList.add('hidden');
@@ -340,6 +432,80 @@ function pollScanStatus() {
     });
 }
 
+function togglePauseScan() {
+    const isCurrentlyPaused = elements.appStatusBadge.classList.contains('paused');
+    const endpoint = isCurrentlyPaused ? '/api/scan/resume' : '/api/scan/pause';
+    
+    fetch(endpoint, { method: 'POST' })
+    .then(res => {
+        if (!res.ok) {
+            return res.json().then(err => { throw new Error(err.detail || "Không thể thực hiện yêu cầu."); });
+        }
+        return res.json();
+    })
+    .then(data => {
+        if (isCurrentlyPaused) {
+            showToast("Tiếp tục tiến trình quét...", "success");
+            updatePauseUI(false);
+        } else {
+            showToast("Đang tạm dừng tiến trình quét...", "info");
+            updatePauseUI(true);
+        }
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    });
+}
+
+function updatePauseUI(isPaused) {
+    if (!elements.btnPauseScan || !elements.btnPauseText) return;
+    
+    if (isPaused) {
+        if (!elements.appStatusBadge.classList.contains('paused')) {
+            elements.appStatusBadge.className = 'status-badge paused';
+            elements.appStatusText.textContent = 'Đang tạm dừng';
+            elements.btnPauseScan.innerHTML = `
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span id="btn-pause-text">Tiếp tục</span>
+            `;
+            elements.btnPauseText = document.getElementById('btn-pause-text');
+        }
+    } else {
+        if (!elements.appStatusBadge.classList.contains('scanning') && elements.appStatusBadge.className !== 'status-badge') {
+            elements.appStatusBadge.className = 'status-badge scanning';
+            elements.appStatusText.textContent = 'Đang quét ảnh...';
+            elements.btnPauseScan.innerHTML = `
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <span id="btn-pause-text">Tạm dừng</span>
+            `;
+            elements.btnPauseText = document.getElementById('btn-pause-text');
+        }
+    }
+}
+
+function requestStopScan() {
+    if (confirm("Bạn có chắc chắn muốn kết thúc tiến trình quét hiện tại? Các ảnh đã quét sẽ được gom cụm và hiển thị ngay lập tức.")) {
+        fetch('/api/scan/stop', { method: 'POST' })
+        .then(res => {
+            if (!res.ok) {
+                return res.json().then(err => { throw new Error(err.detail || "Không thể dừng tiến trình."); });
+            }
+            return res.json();
+        })
+        .then(data => {
+            showToast("Đang dừng tiến trình quét, vui lòng chờ các luồng hiện tại đóng...", "info");
+        })
+        .catch(err => {
+            showToast(err.message, "error");
+        });
+    }
+}
+
 function resetToIdle() {
     elements.btnScan.disabled = false;
     elements.scanProgressPanel.classList.add('hidden');
@@ -347,13 +513,30 @@ function resetToIdle() {
     elements.appStatusBadge.className = 'status-badge';
     elements.appStatusText.textContent = 'Sẵn sàng phân loại';
     
-    // Disable config panels
-    elements.configNaming.style.opacity = '0.5';
-    elements.configNaming.style.pointerEvents = 'none';
-    elements.configClustering.style.opacity = '0.5';
-    elements.configClustering.style.pointerEvents = 'none';
-    elements.configExport.style.opacity = '0.5';
-    elements.configExport.style.pointerEvents = 'none';
+    // Reset pause button state
+    if (elements.btnPauseScan) {
+        elements.btnPauseScan.innerHTML = `
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+            <span id="btn-pause-text">Tạm dừng</span>
+        `;
+        elements.btnPauseText = document.getElementById('btn-pause-text');
+    }
+    
+    // Disable config panels by adding CSS class back
+    elements.configNaming.classList.add('disabled-before-scan');
+    elements.configNaming.style.opacity = '';
+    elements.configNaming.style.pointerEvents = '';
+    
+    elements.configClustering.classList.add('disabled-before-scan');
+    elements.configClustering.style.opacity = '';
+    elements.configClustering.style.pointerEvents = '';
+    
+    elements.configExport.classList.add('disabled-before-scan');
+    elements.configExport.style.opacity = '';
+    elements.configExport.style.pointerEvents = '';
 }
 
 // --- Face Clustering Operations ---
@@ -361,10 +544,11 @@ const debouncedCluster = debounce((eps) => {
     fetchClusters(eps);
 }, 200);
 
-function fetchClusters(eps, triggerWizardAfterFetch = false) {
+function fetchClusters(sensitivity, triggerWizardAfterFetch = false) {
     elements.appStatusBadge.className = 'status-badge scanning';
     elements.appStatusText.textContent = 'Đang xếp nhóm khuôn mặt...';
     
+    const eps = (1.0 - sensitivity).toFixed(2);
     fetch(`/api/cluster?eps=${eps}`)
     .then(res => res.json())
     .then(groups => {
@@ -389,8 +573,9 @@ function fetchClusters(eps, triggerWizardAfterFetch = false) {
         
         // Enable naming config if groups are available
         if (groups.length > 0) {
-            elements.configNaming.style.opacity = '1';
-            elements.configNaming.style.pointerEvents = 'auto';
+            elements.configNaming.classList.remove('disabled-before-scan');
+            elements.configNaming.style.opacity = '';
+            elements.configNaming.style.pointerEvents = '';
         }
         
         // Automatically prompt to start the naming wizard
@@ -408,16 +593,86 @@ function fetchClusters(eps, triggerWizardAfterFetch = false) {
     });
 }
 
+function triggerAutoTune() {
+    if (!elements.btnAutoTune) return;
+    
+    // Disable button to prevent spamming
+    elements.btnAutoTune.disabled = true;
+    const originalContent = elements.btnAutoTune.innerHTML;
+    elements.btnAutoTune.innerHTML = `
+        <svg class="btn-icon spinner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;animation:spin-clockwise 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+        Đang tối ưu hóa...
+    `;
+    
+    showToast("Đang phân tích đặc trưng để tìm độ nhạy tốt nhất...", "info");
+    
+    fetch('/api/auto-tune', { method: 'POST' })
+    .then(res => {
+        if (!res.ok) {
+            return res.json().then(err => { throw new Error(err.detail || "Không thể tối ưu hóa."); });
+        }
+        return res.json();
+    })
+    .then(data => {
+        const optimalSensitivity = data.optimal_sensitivity;
+        showToast(`Đã tìm thấy cấu hình tối ưu: Độ nhạy = ${optimalSensitivity.toFixed(2)}`, "success");
+        
+        // Update slider value and display
+        elements.sensitivitySlider.value = optimalSensitivity;
+        elements.sensitivityValue.textContent = optimalSensitivity.toFixed(2);
+        
+        // Update application state
+        state.sensitivity = optimalSensitivity;
+        
+        // Update visualizer nodes
+        updateSensitivityVisualizer(optimalSensitivity);
+        
+        // Re-fetch clusters and refresh UI
+        fetchClusters(optimalSensitivity);
+    })
+    .catch(err => {
+        showToast(err.message, "error");
+    })
+    .finally(() => {
+        elements.btnAutoTune.disabled = false;
+        elements.btnAutoTune.innerHTML = originalContent;
+    });
+}
+
 // --- Render Main Results Grid ---
 function renderPeopleGrid() {
     elements.emptyState.classList.add('hidden');
     elements.resultsGridPanel.classList.remove('hidden');
     elements.peopleGrid.innerHTML = '';
     
-    const groups = Object.values(state.clusteredGroups);
+    let groups = Object.values(state.clusteredGroups);
+    
+    // 1. Filter groups
+    if (state.activeFilter === 'warnings') {
+        groups = groups.filter(g => g.faces.some(f => f.is_suspicious));
+    }
+    
+    // 2. Sort groups
+    groups.sort((a, b) => {
+        if (state.sortByOption === 'size_desc') {
+            return b.faces.length - a.faces.length;
+        } else if (state.sortByOption === 'size_asc') {
+            return a.faces.length - b.faces.length;
+        } else if (state.sortByOption === 'name_asc') {
+            return a.person_name.localeCompare(b.person_name, 'vi', { numeric: true, sensitivity: 'base' });
+        } else if (state.sortByOption === 'warnings_desc') {
+            const warningsA = a.faces.filter(f => f.is_suspicious).length;
+            const warningsB = b.faces.filter(f => f.is_suspicious).length;
+            if (warningsA !== warningsB) {
+                return warningsB - warningsA;
+            }
+            return b.faces.length - a.faces.length;
+        }
+        return 0;
+    });
     
     if (groups.length === 0) {
-        elements.peopleGrid.innerHTML = '<p class="no-results">Không có khuôn mặt nào được nhận diện.</p>';
+        elements.peopleGrid.innerHTML = '<p class="no-results">Không có nhóm khuôn mặt nào khớp với bộ lọc.</p>';
         return;
     }
     
@@ -430,9 +685,24 @@ function renderPeopleGrid() {
         const firstFace = group.faces[0];
         const avatarSrc = firstFace ? firstFace.crop_image : '';
         
+        const hasSuspicious = group.faces.some(f => f.is_suspicious);
+        const suspiciousCount = group.faces.filter(f => f.is_suspicious).length;
+        let alertBadge = '';
+        if (hasSuspicious) {
+            alertBadge = `
+                <div class="person-alert-badge" title="Nhóm này có chứa ${suspiciousCount} khuôn mặt nghi ngờ không khớp" style="display: flex; align-items: center; justify-content: center; gap: 2px; padding: 2px 6px; width: auto; height: 18px; border-radius: 9px; font-size: 9px; font-weight: 700; background: rgba(245, 158, 11, 0.9); box-shadow: 0 0 10px rgba(245, 158, 11, 0.4); border: 1px solid rgba(255, 255, 255, 0.1);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 9px; height: 9px; color: #fff;">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    </svg>
+                    <span style="color: #fff;">${suspiciousCount}</span>
+                </div>
+            `;
+        }
+        
         card.innerHTML = `
             <div class="person-avatar-wrapper">
                 <img class="person-avatar" src="${avatarSrc}" alt="Avatar">
+                ${alertBadge}
             </div>
             <div class="person-name-wrapper">
                 <span class="person-name" title="${group.person_name}">${group.person_name}</span>
@@ -491,8 +761,22 @@ function openGroupDetails(clusterId) {
         faceCard.draggable = true;
         faceCard.dataset.faceId = face.id;
         
+        let warningBadge = '';
+        if (face.is_suspicious) {
+            const pct = Math.round((face.similarity || 0) * 100);
+            warningBadge = `
+                <div class="warning-badge" title="Độ tương đồng thấp (${pct}%) - Có thể nhận diện sai" style="display: flex; align-items: center; gap: 3px; background: rgba(245, 158, 11, 0.95); padding: 2px 6px; border-radius: 8px; font-size: 9px; font-weight: 700; color: #fff; width: auto; height: 18px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 2px 8px rgba(0,0,0,0.5);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 9px; height: 9px; color: #fff;">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    </svg>
+                    <span>${pct}%</span>
+                </div>
+            `;
+        }
+        
         faceCard.innerHTML = `
             <img class="face-thumb" src="${face.crop_image}" alt="Face Thumbnail">
+            ${warningBadge}
         `;
         
         // Open original lightbox on click
@@ -555,13 +839,8 @@ function savePersonName(e) {
     })
     .then(() => {
         showToast(`Đã đổi tên thành "${newName}"`, "success");
-        // Update local state
-        if (state.clusteredGroups[clusterId]) {
-            state.clusteredGroups[clusterId].person_name = newName;
-            state.clusteredGroups[clusterId].faces.forEach(f => f.person_name = newName);
-        }
-        // Re-render
-        renderPeopleGrid();
+        // Fetch fresh clusters from backend to reflect group merging immediately!
+        fetchClusters(state.sensitivity);
     })
     .catch(err => {
         showToast(err.message, "error");
@@ -833,11 +1112,27 @@ function showWizardStep(index) {
     // Render Faces gallery
     elements.wizardFacesGallery.innerHTML = '';
     group.faces.forEach(face => {
-        const img = document.createElement('img');
-        img.className = 'wizard-face-thumb';
-        img.src = face.crop_image;
-        img.alt = 'Face thumbnail';
-        elements.wizardFacesGallery.appendChild(img);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'wizard-face-wrapper';
+        wrapper.style.position = 'relative';
+        
+        let warningBadge = '';
+        if (face.is_suspicious) {
+            const pct = Math.round((face.similarity || 0) * 100);
+            warningBadge = `
+                <div class="warning-badge small" title="Độ tương đồng thấp (${pct}%)" style="position: absolute; top: -4px; right: -4px; background: rgba(13, 15, 34, 0.95); border: 1px solid #f59e0b; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 10px; height: 10px; color: #f59e0b;">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    </svg>
+                </div>
+            `;
+        }
+        
+        wrapper.innerHTML = `
+            <img class="wizard-face-thumb" src="${face.crop_image}" alt="Face thumbnail" style="width: 60px; height: 60px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); object-fit: cover;">
+            ${warningBadge}
+        `;
+        elements.wizardFacesGallery.appendChild(wrapper);
     });
     
     // Autofocus input after a slight delay for transition
@@ -918,6 +1213,9 @@ function closeWizard() {
     elements.wizardModal.classList.add('hidden');
     state.wizardActive = false;
     state.wizardGroups = [];
+    
+    // Fetch fresh clusters from backend to reflect group merging done in Wizard immediately!
+    fetchClusters(state.sensitivity);
 }
 
 // --- Directory Chooser Operations ---
@@ -949,7 +1247,7 @@ function updateSensitivityVisualizer(val) {
     
     const nodes = [elements.visNode1, elements.visNode2, elements.visNode3, elements.visNode4];
     
-    if (val < 0.95) {
+    if (val < 0.45) {
         // Low sensitivity: grouped loosely (nodes clustered tightly together, same color)
         elements.sensitivityExplain.textContent = "Gộp rộng (Ít nhóm to, nguy cơ nhầm lẫn cao)";
         elements.sensitivityExplain.style.color = "#f43f5e"; // Pink/Red warning
@@ -961,7 +1259,7 @@ function updateSensitivityVisualizer(val) {
             n.style.transform = `translateX(${(idx - 1.5) * 4}px)`;
         });
     } 
-    else if (val >= 0.95 && val <= 1.25) {
+    else if (val >= 0.45 && val <= 0.65) {
         // Balanced sensitivity: optimally clustered (2 colored pairs, medium distance)
         elements.sensitivityExplain.textContent = "Phân nhóm cân bằng (Tối ưu - Khuyến nghị)";
         elements.sensitivityExplain.style.color = "var(--accent-emerald)";
